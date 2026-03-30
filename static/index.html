@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎧 Shokz Station</title>
+<style>
+  :root {
+    --bg: #1a1a2e; --surface: #16213e; --card: #0f3460;
+    --accent: #e94560; --accent2: #00d2ff;
+    --text: #eaeaea; --muted: #888; --border: #2a2a4a;
+    --success: #2ecc71; --warning: #f39c12; --danger: #e74c3c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 12px 20px; display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 100;
+  }
+  header h1 { font-size: 1.2rem; flex: 1; }
+  .badge {
+    padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .badge.connected { background: rgba(46,204,113,0.2); color: var(--success); border: 1px solid var(--success); }
+  .badge.disconnected { background: rgba(231,76,60,0.2); color: var(--danger); border: 1px solid var(--danger); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .badge.connected .dot { background: var(--success); animation: pulse 2s infinite; }
+  .badge.disconnected .dot { background: var(--danger); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .tab {
+    padding: 12px 24px; cursor: pointer; font-weight: 500; font-size: 0.95rem;
+    border-bottom: 3px solid transparent; transition: all 0.2s; color: var(--muted);
+  }
+  .tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+  .tab:hover:not(.active) { color: var(--text); }
+
+  .panel { display: none; padding: 20px; max-width: 900px; margin: 0 auto; }
+  .panel.active { display: block; }
+
+  /* Breadcrumb */
+  .breadcrumb { display: flex; align-items: center; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; font-size: 0.9rem; }
+  .breadcrumb span { color: var(--muted); }
+  .breadcrumb a { color: var(--accent2); cursor: pointer; text-decoration: none; }
+  .breadcrumb a:hover { text-decoration: underline; }
+
+  /* File list */
+  .file-list { background: var(--surface); border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+  .file-item {
+    display: flex; align-items: center; padding: 10px 16px; gap: 12px;
+    border-bottom: 1px solid var(--border); transition: background 0.15s; cursor: pointer;
+  }
+  .file-item:last-child { border-bottom: none; }
+  .file-item:hover { background: rgba(255,255,255,0.04); }
+  .file-item.selected { background: rgba(0,210,255,0.1); }
+  .file-icon { font-size: 1.3rem; width: 28px; text-align: center; flex-shrink: 0; }
+  .file-name { flex: 1; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-size { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+  .file-actions { display: flex; gap: 6px; opacity: 0; transition: opacity 0.15s; }
+  .file-item:hover .file-actions { opacity: 1; }
+  .btn-icon {
+    background: none; border: 1px solid var(--border); color: var(--text);
+    width: 30px; height: 30px; border-radius: 6px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 0.85rem;
+    transition: all 0.15s;
+  }
+  .btn-icon:hover { background: var(--card); }
+  .btn-icon.danger:hover { background: rgba(231,76,60,0.2); border-color: var(--danger); color: var(--danger); }
+  .file-item.drag-over-dir { background: rgba(0,210,255,0.15) !important; border: 1px dashed var(--accent2); }
+
+  /* Toolbar */
+  .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer;
+    font-size: 0.9rem; font-weight: 500; display: flex; align-items: center; gap: 6px;
+    transition: all 0.15s;
+  }
+  .btn-primary { background: var(--accent2); color: #000; }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: #1a4070; }
+  .btn-danger { background: rgba(231,76,60,0.2); color: var(--danger); border: 1px solid var(--danger); }
+  .btn-danger:hover { background: rgba(231,76,60,0.35); }
+
+  /* Upload drop zone */
+  .dropzone {
+    border: 2px dashed var(--border); border-radius: 12px; padding: 32px;
+    text-align: center; color: var(--muted); transition: all 0.2s; cursor: pointer;
+    margin-top: 16px;
+  }
+  .dropzone.drag-over { border-color: var(--accent2); color: var(--accent2); background: rgba(0,210,255,0.05); }
+  .dropzone .icon { font-size: 2.5rem; margin-bottom: 8px; }
+
+  /* Progress bars */
+  .upload-list { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .upload-item { background: var(--surface); border-radius: 8px; padding: 12px; border: 1px solid var(--border); }
+  .upload-item-header { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; }
+  .upload-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
+  .upload-status { color: var(--muted); font-size: 0.85rem; }
+  .progress-bar-bg { background: var(--card); border-radius: 4px; height: 6px; overflow: hidden; }
+  .progress-bar { height: 100%; border-radius: 4px; transition: width 0.3s; background: linear-gradient(90deg, var(--accent2), #0099cc); }
+  .progress-bar.done { background: var(--success); }
+  .progress-bar.error { background: var(--danger); }
+
+  /* Download tab */
+  .dl-form { background: var(--surface); border-radius: 12px; padding: 20px; border: 1px solid var(--border); margin-bottom: 20px; }
+  .dl-form label { display: block; margin-bottom: 8px; font-weight: 500; }
+  .input-row { display: flex; gap: 8px; }
+  input[type=text], input[type=url] {
+    flex: 1; background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 14px; border-radius: 8px; font-size: 0.95rem;
+  }
+  input:focus { outline: none; border-color: var(--accent2); }
+
+  .dl-preview { background: var(--card); border-radius: 8px; padding: 14px; margin-top: 14px; display: none; }
+  .dl-preview.show { display: flex; gap: 12px; align-items: flex-start; }
+  .dl-preview img { width: 80px; height: 60px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+  .spinner { width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--accent2); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .dl-status-row { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.9rem; }
+  .dl-preview-info { flex: 1; }
+  .dl-preview-title { font-weight: 600; margin-bottom: 4px; }
+  .dl-preview-meta { color: var(--muted); font-size: 0.85rem; }
+
+  .dl-jobs { display: flex; flex-direction: column; gap: 10px; }
+  .dl-job { background: var(--surface); border-radius: 10px; padding: 14px; border: 1px solid var(--border); }
+  .dl-job-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+  .dl-job-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%; }
+  .dl-job-status { font-size: 0.85rem; }
+  .dl-job-status.done { color: var(--success); }
+  .dl-job-status.error { color: var(--danger); }
+  .dl-job-status.downloading, .dl-job-status.starting { color: var(--accent2); }
+  .dl-job-msg { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center; z-index: 200; display: none;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--surface); border-radius: 12px; padding: 24px; width: 340px; border: 1px solid var(--border); }
+  .modal h3 { margin-bottom: 16px; }
+  .modal input { width: 100%; background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 10px 14px; border-radius: 8px; font-size: 0.95rem; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+
+  .empty-state { text-align: center; padding: 40px; color: var(--muted); }
+  .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+
+  .not-mounted { text-align: center; padding: 60px 20px; }
+  .not-mounted .icon { font-size: 4rem; margin-bottom: 16px; }
+  .not-mounted h2 { margin-bottom: 8px; }
+  .not-mounted p { color: var(--muted); }
+
+  .btn-eject {
+    padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+    background: rgba(243,156,18,0.15); color: var(--warning); border: 1px solid var(--warning);
+    cursor: pointer; display: none; align-items: center; gap: 5px; transition: all 0.15s;
+  }
+  .btn-eject:hover { background: rgba(243,156,18,0.3); }
+  .btn-eject.visible { display: flex; }
+  @media (max-width: 600px) {
+    .toolbar { gap: 6px; }
+    .btn { padding: 8px 12px; font-size: 0.85rem; }
+    .file-actions { opacity: 1; }
+    .panel { padding: 12px; }
+    header { padding: 10px 12px; }
+    header h1 { font-size: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎧 Shokz Station</h1>
+  <div id="status-badge" class="badge disconnected"><div class="dot"></div><span>Checking...</span></div>
+  <button id="btn-eject" class="btn-eject" onclick="ejectDevice()" title="Sicher entfernen">⏏️ Auswerfen</button>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="files">📁 Files</div>
+  <div class="tab" data-tab="download">⬇️ Download</div>
+</div>
+
+<div id="panel-files" class="panel active">
+  <div id="files-content"></div>
+</div>
+
+<div id="panel-download" class="panel">
+  <div class="dl-form">
+    <label>YouTube / SoundCloud URL</label>
+    <div class="input-row">
+      <input type="url" id="dl-url" placeholder="https://www.youtube.com/watch?v=..." onkeydown="if(event.key==='Enter') startDownload()" />
+      <button class="btn btn-primary" onclick="startDownload()" id="btn-dl">⬇️ Laden</button>
+    </div>
+    <div style="margin-top:8px; color:var(--muted); font-size:0.82rem;">⚠️ Download kann auf dem Pi Zero mehrere Minuten dauern</div>
+  </div>
+  <div id="dl-jobs" class="dl-jobs"></div>
+</div>
+
+<!-- Modal -->
+<div id="modal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title">Rename</h3>
+    <input type="text" id="modal-input" />
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="modal-ok" onclick="submitModal()">OK</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file-input" multiple style="display:none" accept="audio/*,video/*,.mp3,.m4a,.flac,.wav,.ogg">
+
+<script>
+const api = (path, opts) => fetch('/api' + path, opts).then(r => r.json());
+
+let currentPath = '';
+let mounted = false;
+let modalCallback = null;
+let pendingDlInfo = null;
+
+// ── Status polling ──────────────────────────────────────────────────────────
+function applyStatus(mountedState) {
+  const wasM = mounted;
+  mounted = mountedState;
+  const badge = document.getElementById('status-badge');
+  badge.className = 'badge ' + (mounted ? 'connected' : 'disconnected');
+  badge.innerHTML = `<div class="dot"></div><span>${mounted ? 'Shokz verbunden' : 'Nicht verbunden'}</span>`;
+  const ejectBtn = document.getElementById('btn-eject');
+  if (ejectBtn) {
+    ejectBtn.classList.toggle('visible', mounted);
+    if (mounted) {
+      ejectBtn.textContent = '⏏️ Auswerfen';
+      ejectBtn.disabled = false;
+    }
+  }
+  if (mounted !== wasM && document.getElementById('panel-files').classList.contains('active')) {
+    renderFiles();
+  }
+}
+
+function connectStatusStream() {
+  const es = new EventSource('/api/events');
+  es.onmessage = e => {
+    try { applyStatus(JSON.parse(e.data).mounted); } catch(err) {}
+  };
+  es.onerror = () => {
+    es.close();
+    setTimeout(connectStatusStream, 5000);
+  };
+}
+
+async function ejectDevice() {
+  const btn = document.getElementById('btn-eject');
+  btn.textContent = '⏳ Auswerfen...';
+  btn.disabled = true;
+  try {
+    const res = await api('/eject', { method: 'POST' });
+    if (res.ok) {
+      mounted = false;
+      const badge = document.getElementById('status-badge');
+      badge.className = 'badge disconnected';
+      badge.innerHTML = '<div class="dot"></div><span>Ausgeworfen ✅</span>';
+      btn.classList.remove('visible');
+      if (document.getElementById('panel-files').classList.contains('active')) renderFiles();
+    } else {
+      alert('Fehler beim Auswerfen: ' + (res.error || 'Unbekannter Fehler'));
+      btn.textContent = '⏏️ Auswerfen';
+      btn.disabled = false;
+    }
+  } catch(e) {
+    alert('Netzwerkfehler');
+    btn.textContent = '⏏️ Auswerfen';
+    btn.disabled = false;
+  }
+}
+api('/status').then(s => applyStatus(s.mounted)).catch(() => {});
+connectStatusStream();
+
+// ── Tabs ────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'files') renderFiles();
+  });
+});
+
+// ── File Manager ────────────────────────────────────────────────────────────
+function formatSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1048576).toFixed(1) + ' MB';
+}
+
+function fileIcon(entry) {
+  if (entry.type === 'dir') return '📁';
+  const ext = entry.name.split('.').pop().toLowerCase();
+  const audio = ['mp3','m4a','flac','wav','ogg','aac'];
+  return audio.includes(ext) ? '🎵' : '📄';
+}
+
+async function renderFiles() {
+  const container = document.getElementById('files-content');
+  if (!mounted) {
+    container.innerHTML = `<div class="not-mounted"><div class="icon">🔌</div><h2>Shokz nicht verbunden</h2><p>Verbinde die Kopfhörer via USB, um loszulegen.</p></div>`;
+    return;
+  }
+  try {
+    const data = await api('/files/' + currentPath);
+    
+    // Breadcrumb
+    let bc = `<div class="breadcrumb"><a onclick="navigateTo('')">🏠 root</a>`;
+    if (currentPath) {
+      const parts = currentPath.split('/');
+      let acc = '';
+      parts.forEach((p, i) => {
+        acc += (i > 0 ? '/' : '') + p;
+        const path = acc;
+        bc += `<span>/</span><a onclick="navigateTo('${path}')">${p}</a>`;
+      });
+    }
+    bc += '</div>';
+
+    // Toolbar
+    const toolbar = `<div class="toolbar">
+      <button class="btn btn-secondary" onclick="openMkdir()">📁 Neuer Ordner</button>
+      <button class="btn btn-primary" onclick="openUpload()">⬆️ Upload</button>
+    </div>`;
+
+    // Files
+    let list = '';
+    if (data.entries.length === 0) {
+      list = `<div class="empty-state"><div class="icon">📭</div><p>Dieser Ordner ist leer.</p></div>`;
+    } else {
+      fileRegistry = {};
+      list = '<div class="file-list" id="file-list">';
+      data.entries.forEach((e, i) => {
+        const id = 'fi' + i;
+        fileRegistry[id] = e;
+        list += '<div class="file-item" data-id="' + id + '" data-type="' + e.type + '" draggable="true">'
+          + '<div class="file-icon">' + fileIcon(e) + '</div>'
+          + '<div class="file-name">' + e.name + '</div>'
+          + '<div class="file-size">' + (e.type === 'file' ? formatSize(e.size) : '') + '</div>'
+          + '<div class="file-actions" onclick="event.stopPropagation()">'
+          + '<button class="btn-icon" title="Rename" onclick="openRenameById(\'' + id + '\')" >✏️</button>'
+          + '<button class="btn-icon danger" title="Delete" onclick="confirmDeleteById(\'' + id + '\')" >🗑️</button>'
+          + '</div></div>';
+      });
+      list += '</div>';
+    }
+
+    // Drop zone
+    const dz = `<div id="dropzone" class="dropzone" onclick="openUpload()">
+      <div class="icon">⬆️</div>
+      <div>Drop files here or click to upload</div>
+      <div style="font-size:0.8rem;margin-top:4px;color:var(--muted)">MP3, M4A, FLAC, WAV, ...</div>
+    </div>
+    <div id="upload-list" class="upload-list"></div>`;
+
+    container.innerHTML = bc + toolbar + list + dz;
+    setupFileDrag();
+    setupDropzone();
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Fehler beim Laden.</p></div>`;
+  }
+}
+
+function navigateTo(path) {
+  currentPath = path;
+  renderFiles();
+}
+
+let fileRegistry = {};
+
+function handleClick(e) {
+  const item = e.currentTarget;
+  if (e.target.closest('.file-actions')) return;
+  const id = item.dataset.id;
+  const entry = fileRegistry[id];
+  if (!entry) return;
+  if (entry.type === 'dir') navigateTo(entry.path);
+}
+
+function openRenameById(id) {
+  const e = fileRegistry[id];
+  if (!e) return;
+  openRename(e.path, e.name);
+}
+function confirmDeleteById(id) {
+  const e = fileRegistry[id];
+  if (!e) return;
+  confirmDelete(e.path);
+}
+
+// Drag-to-move between folders
+let dragSrcId = null;
+function setupFileDrag() {
+  const list = document.getElementById('file-list');
+  if (!list) return;
+  list.querySelectorAll('.file-item').forEach(item => {
+    // Click handler
+    item.addEventListener('click', handleClick);
+    // Drag source
+    item.addEventListener('dragstart', e => {
+      dragSrcId = item.dataset.id;
+      e.dataTransfer.effectAllowed = 'move';
+      item.style.opacity = '0.5';
+    });
+    item.addEventListener('dragend', e => {
+      item.style.opacity = '';
+      list.querySelectorAll('.file-item').forEach(i => i.classList.remove('drag-over-dir'));
+    });
+    // Drop target (only dirs)
+    if (item.dataset.type === 'dir') {
+      item.addEventListener('dragover', e => {
+        if (dragSrcId && dragSrcId !== item.dataset.id) {
+          e.preventDefault();
+          item.classList.add('drag-over-dir');
+        }
+      });
+      item.addEventListener('dragleave', () => item.classList.remove('drag-over-dir'));
+      item.addEventListener('drop', async e => {
+        e.preventDefault();
+        e.stopPropagation();
+        item.classList.remove('drag-over-dir');
+        if (!dragSrcId || dragSrcId === item.dataset.id) return;
+        const src = fileRegistry[dragSrcId];
+        const dst = fileRegistry[item.dataset.id];
+        if (!src || !dst) return;
+        await api('/move', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({src: src.path, dst_dir: dst.path}) });
+        renderFiles();
+      });
+    }
+  });
+}
+
+// ── Upload ──────────────────────────────────────────────────────────────────
+function openUpload() {
+  document.getElementById('file-input').click();
+}
+
+document.getElementById('file-input').addEventListener('change', e => {
+  uploadFiles(Array.from(e.target.files));
+  e.target.value = '';
+});
+
+function setupDropzone() {
+  const dz = document.getElementById('dropzone');
+  if (!dz) return;
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    uploadFiles(Array.from(e.dataTransfer.files));
+  });
+}
+
+async function uploadFiles(files) {
+  const list = document.getElementById('upload-list');
+  if (!list) return;
+
+  for (const file of files) {
+    const itemId = 'up-' + Date.now() + Math.random().toString(36).slice(2);
+    const item = document.createElement('div');
+    item.className = 'upload-item';
+    item.id = itemId;
+    item.innerHTML = `
+      <div class="upload-item-header">
+        <div class="upload-item-name">🎵 ${file.name}</div>
+        <div class="upload-status" id="${itemId}-status">0%</div>
+      </div>
+      <div class="progress-bar-bg"><div class="progress-bar" id="${itemId}-bar" style="width:0%"></div></div>`;
+    list.appendChild(item);
+
+    await new Promise(resolve => {
+      const fd = new FormData();
+      fd.append('dest_dir', currentPath);
+      fd.append('files', file);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload');
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable) {
+          const pct = Math.round(e.loaded / e.total * 100);
+          document.getElementById(itemId + '-bar').style.width = pct + '%';
+          document.getElementById(itemId + '-status').textContent = pct + '%';
+        }
+      };
+      xhr.onload = () => {
+        const bar = document.getElementById(itemId + '-bar');
+        const status = document.getElementById(itemId + '-status');
+        if (xhr.status === 200) {
+          bar.style.width = '100%'; bar.className = 'progress-bar done';
+          status.textContent = '✅ Done';
+        } else {
+          bar.className = 'progress-bar error';
+          status.textContent = '❌ Error';
+        }
+        setTimeout(() => renderFiles(), 1000);
+        resolve();
+      };
+      xhr.onerror = () => { resolve(); };
+      xhr.send(fd);
+    });
+  }
+}
+
+// ── Rename / Delete / Mkdir ─────────────────────────────────────────────────
+function openMkdir() {
+  openModal('Neuer Ordner', '', name => {
+    api('/mkdir', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: currentPath ? currentPath + '/' + name : name }) })
+      .then(() => renderFiles());
+  });
+}
+
+function openRename(path, oldName) {
+  openModal('Umbenennen', oldName, newName => {
+    api('/rename', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path, new_name: newName }) })
+      .then(() => renderFiles());
+  });
+}
+
+async function confirmDelete(path) {
+  if (!confirm(`"${path.split('/').pop()}" wirklich löschen?`)) return;
+  await api('/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path }) });
+  renderFiles();
+}
+
+// ── Modal ───────────────────────────────────────────────────────────────────
+function openModal(title, value, callback) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-input').value = value;
+  document.getElementById('modal').classList.add('show');
+  modalCallback = callback;
+  setTimeout(() => {
+    const input = document.getElementById('modal-input');
+    input.focus(); input.select();
+  }, 50);
+}
+function closeModal() { document.getElementById('modal').classList.remove('show'); modalCallback = null; }
+function submitModal() {
+  const val = document.getElementById('modal-input').value.trim();
+  if (val && modalCallback) { modalCallback(val); }
+  closeModal();
+}
+document.getElementById('modal-input').addEventListener('keydown', e => { if(e.key === 'Enter') submitModal(); if(e.key === 'Escape') closeModal(); });
+document.getElementById('modal').addEventListener('click', e => { if(e.target === document.getElementById('modal')) closeModal(); });
+
+// ── Download ─────────────────────────────────────────────────────────────────
+async function startDownload() {
+  const url = document.getElementById('dl-url').value.trim();
+  if (!url) return;
+  const btn = document.getElementById('btn-dl');
+  btn.disabled = true;
+
+  const res = await api('/dl/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url, dest_dir: currentPath}) });
+  btn.disabled = false;
+  if (res.error) { alert(res.error); return; }
+  document.getElementById('dl-url').value = '';
+
+  const jobId = res.job_id;
+  addJobCard(jobId, url);
+
+  // SSE stream
+  const evtSrc = new EventSource(`/api/dl/stream/${jobId}`);
+  evtSrc.onmessage = e => {
+    try {
+      const job = JSON.parse(e.data);
+      updateJobCard(jobId, job);
+      // Update card title once yt-dlp reveals the real title
+      if (job.title) {
+        const titleEl = document.querySelector('#job-' + jobId + ' .dl-job-title');
+        if (titleEl) titleEl.textContent = '🎵 ' + job.title;
+      }
+      if (job.status === 'done' || job.status === 'error') {
+        evtSrc.close();
+        if (job.status === 'done') setTimeout(() => renderFiles(), 500);
+      }
+    } catch(err) {}
+  };
+  evtSrc.onerror = () => evtSrc.close();
+}
+
+function addJobCard(jobId, title) {
+  const container = document.getElementById('dl-jobs');
+  const card = document.createElement('div');
+  card.className = 'dl-job'; card.id = 'job-' + jobId;
+  card.innerHTML = `
+    <div class="dl-job-header">
+      <div class="dl-job-title">🎵 ${title}</div>
+      <div class="dl-job-status starting" id="job-${jobId}-status">Starting...</div>
+    </div>
+    <div class="progress-bar-bg"><div class="progress-bar" id="job-${jobId}-bar" style="width:0%"></div></div>
+    <div class="dl-job-msg" id="job-${jobId}-msg">Initializing...</div>`;
+  container.prepend(card);
+}
+
+function updateJobCard(jobId, job) {
+  const bar = document.getElementById(`job-${jobId}-bar`);
+  const status = document.getElementById(`job-${jobId}-status`);
+  const msg = document.getElementById(`job-${jobId}-msg`);
+  if (!bar) return;
+  bar.style.width = job.progress + '%';
+  if (job.status === 'done') bar.className = 'progress-bar done';
+  else if (job.status === 'error') bar.className = 'progress-bar error';
+  status.className = 'dl-job-status ' + job.status;
+  status.textContent = job.status === 'done' ? '✅ Done' : job.status === 'error' ? '❌ Error' : job.status;
+  if (msg) msg.textContent = job.error || job.message || '';
+}
+</script>
+</body>
+</html>
