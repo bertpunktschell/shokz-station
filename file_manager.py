@@ -32,8 +32,11 @@ def list_directory(rel_path=""):
     if not target.exists():
         raise FileNotFoundError(f"Path not found: {rel_path}")
 
+    HIDDEN = {'SYSTEM', 'System Volume Information'}
     entries = []
     for item in sorted(target.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+        if item.name in HIDDEN:
+            continue
         entries.append({
             "name": item.name,
             "type": "dir" if item.is_dir() else "file",
