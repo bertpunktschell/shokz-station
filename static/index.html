@@ -226,14 +226,26 @@
   <div id="dl-jobs" class="dl-jobs"></div>
 </div>
 
-<!-- Modal -->
+<!-- Rename Modal -->
 <div id="modal" class="modal-overlay">
   <div class="modal">
     <h3 id="modal-title">Rename</h3>
     <input type="text" id="modal-input" />
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Abbrechen</button>
       <button class="btn btn-primary" id="modal-ok" onclick="submitModal()">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div id="confirm-modal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="confirm-title">Löschen</h3>
+    <p id="confirm-msg" style="color:var(--muted); margin-top:8px; font-size:0.9rem;"></p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeConfirm()">Abbrechen</button>
+      <button class="btn btn-danger" id="confirm-ok">🗑️ Löschen</button>
     </div>
   </div>
 </div>
@@ -632,11 +644,23 @@ function openRename(path, oldName) {
   });
 }
 
-async function confirmDelete(path) {
-  if (!confirm(`"${path.split('/').pop()}" wirklich löschen?`)) return;
-  await api('/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path }) });
-  renderFiles();
+function confirmDelete(path) {
+  const name = path.split('/').pop();
+  document.getElementById('confirm-title').textContent = 'Löschen';
+  document.getElementById('confirm-msg').textContent = `"${name}" wirklich löschen?`;
+  document.getElementById('confirm-modal').classList.add('show');
+  document.getElementById('confirm-ok').onclick = async () => {
+    closeConfirm();
+    await api('/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path }) });
+    renderFiles();
+  };
 }
+function closeConfirm() {
+  document.getElementById('confirm-modal').classList.remove('show');
+}
+document.getElementById('confirm-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('confirm-modal')) closeConfirm();
+});
 
 // ── Modal ───────────────────────────────────────────────────────────────────
 function openModal(title, value, callback) {
