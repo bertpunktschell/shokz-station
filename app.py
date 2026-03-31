@@ -222,7 +222,7 @@ def play_file(rel_path):
 @app.route("/api/eject", methods=["POST"])
 def eject():
     import subprocess
-    LOCK = "/run/user/1000/shokz-ejected"
+    LOCK = "/run/shokz-ejected"
     try:
         # Set lock first so watcher doesn't remount
         open(LOCK, 'w').close()
