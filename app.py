@@ -224,7 +224,7 @@ def eject():
     LOCK = "/run/shokz-ejected"
     try:
         # Set lock first so watcher doesn't remount
-        open(LOCK, 'w').close()
+        subprocess.run(['sudo', 'touch', LOCK], capture_output=True, timeout=3)
         # Kill any processes with open files on the mount (e.g. audio streaming)
         subprocess.run(['sudo', 'fuser', '-k', fm.MOUNT_PATH],
                        capture_output=True, timeout=3)
@@ -236,7 +236,7 @@ def eject():
             if result.returncode == 0:
                 return jsonify({"ok": True})
         # Both failed - remove lock
-        os.unlink(LOCK)
+        subprocess.run(['sudo', 'rm', '-f', LOCK], capture_output=True, timeout=3)
         return jsonify({"error": "Unmount failed"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
