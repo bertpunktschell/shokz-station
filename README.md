@@ -99,8 +99,8 @@ By default, Raspberry Pi OS (Bookworm) on a Pi Zero 1W takes **~100s+ to boot**.
 
 | Metric | Default | Optimized |
 |--------|---------|-----------|
-| Total boot time | ~100s | **~58s** |
-| Userspace | ~88s | **~47s** |
+| Total boot time | ~100s | **~57s** |
+| Userspace | ~88s | **~43s** |
 
 ### Optimizations Applied
 
@@ -139,15 +139,92 @@ boot_wait=0
 sudo apt-mark hold linux-image-rpi-v6 linux-image-rpi-v7 linux-image-rpi-v8
 ```
 
-**4. Optional: Use static IP instead of DHCP** (saves ~20s by removing NetworkManager):
+**4. Replace NetworkManager with systemd-networkd + static IP (WiFi):**
 
-> ⚠️ Make sure you know the IP before doing this, or have serial console access!
+NetworkManager adds overhead. `systemd-networkd` is much more lightweight. On WiFi, you also need `wpa_supplicant@<iface>`.
 
 ```bash
-# Use systemd-networkd instead of NetworkManager
-sudo systemctl disable --now NetworkManager
-sudo systemctl enable systemd-networkd systemd-resolved
-# Create: /etc/systemd/network/eth0.network
+# Write wpa_supplicant config for your interface
+sudo tee /etc/wpa_supplicant/wpa_supplicant-wlan0.conf > /dev/null << EOF
+ctrl_interface=DIR=/run/wpa_supplicant GROUP=netdev
+update_config=1
+country=AT
+
+network={
+    ssid="YOUR_SSID"
+    psk="YOUR_PASSWORD"
+    key_mgmt=WPA-PSK
+}
+EOF
+sudo chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+
+# Write network config with static IP
+sudo mkdir -p /etc/systemd/network
+sudo tee /etc/systemd/network/10-wlan0.network > /dev/null << EOF
+[Match]
+Name=wlan0
+
+[Network]
+Address=192.168.1.175/24
+Gateway=192.168.1.1
+DNS=192.168.1.1
+EOF
+
+# Switch services
+sudo systemctl enable systemd-networkd wpa_supplicant@wlan0
+sudo systemctl disable NetworkManager
+sudo systemctl disable systemd-networkd-wait-online
+```
+
+> ⚠️ **rfkill pitfall:** If you masked `systemd-rfkill.service` earlier (as above), WiFi will be soft-blocked after reboot! Fix with a small helper service:
+
+```bash
+sudo tee /etc/systemd/system/rfkill-unblock-wifi.service > /dev/null << EOF
+[Unit]
+Description=Unblock WiFi via rfkill
+Before=wpa_supplicant@wlan0.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/rfkill unblock wifi
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl enable rfkill-unblock-wifi.service
+```
+
+**5. Disable Bluetooth (hardware + software):**
+
+```bash
+# Disable BT chip via firmware overlay
+echo "dtoverlay=disable-bt" | sudo tee -a /boot/firmware/config.txt
+
+# Mask BT services
+sudo systemctl mask bluetooth.target hciuart.service
+```
+
+**6. Disable audio (ALSA) — headless Pi doesn't need it:**
+
+```bash
+sudo systemctl mask alsa-restore.service alsa-state.service sound.target
+```
+
+**7. Disable Rainbow Splash screen** (`/boot/firmware/config.txt`):
+
+```ini
+disable_splash=1
+```
+
+**8. Faster Gunicorn shutdown** (reduces reboot/stop time from ~30s to ~5s):
+
+Add `--graceful-timeout 5` and `TimeoutStopSec=10` to the systemd service:
+
+```ini
+[Service]
+ExecStart=.../gunicorn --workers 3 --threads 2 --bind 0.0.0.0:8080 --timeout 120 --graceful-timeout 5 app:app
+TimeoutStopSec=10
 ```
 
 ### What to Keep
