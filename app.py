@@ -221,27 +221,24 @@ def play_file(rel_path):
 
 @app.route("/api/eject", methods=["POST"])
 def eject():
-    import subprocess
     LOCK = "/run/shokz-ejected"
     try:
         # Set lock first so watcher doesn't remount
         open(LOCK, 'w').close()
-        # Try clean unmount, fall back to lazy
-        result = subprocess.run(
-            ['sudo', 'umount', fm.MOUNT_PATH],
-            capture_output=True, text=True, timeout=3
-        )
-        if result.returncode == 0:
-            return jsonify({"ok": True})
-        result2 = subprocess.run(
-            ['sudo', 'umount', '-l', fm.MOUNT_PATH],
-            capture_output=True, text=True, timeout=3
-        )
-        if result2.returncode == 0:
-            return jsonify({"ok": True})
-        # Unmount failed - remove lock again
-        import os; os.unlink(LOCK)
-        return jsonify({"error": result2.stderr.strip() or "Unmount failed"}), 500
+        # Kill any processes with open files on the mount (e.g. audio streaming)
+        subprocess.run(['sudo', 'fuser', '-k', fm.MOUNT_PATH],
+                       capture_output=True, timeout=3)
+        time.sleep(0.3)
+        # Try clean unmount first, then lazy
+        for args in [['sudo', 'umount', fm.MOUNT_PATH],
+                     ['sudo', 'umount', '-l', fm.MOUNT_PATH]]:
+            result = subprocess.run(args, capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                led('off')
+                return jsonify({"ok": True})
+        # Both failed - remove lock
+        os.unlink(LOCK)
+        return jsonify({"error": "Unmount failed"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
