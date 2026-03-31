@@ -3,6 +3,7 @@ import json
 import time
 import queue
 import threading
+import subprocess
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
 
@@ -10,6 +11,26 @@ import file_manager as fm
 import downloader as dl
 
 app = Flask(__name__, static_folder="static", static_url_path="")
+
+# ── LED control ───────────────────────────────────────────────────────────────
+def led(state):
+    """Set LED state: boot | ready | busy | off"""
+    try:
+        subprocess.run(['sudo', '/usr/local/bin/shokz-led.sh', state],
+                       capture_output=True, timeout=2)
+    except Exception:
+        pass
+
+def led_busy_then_ready():
+    """Set LED to busy, then back to ready in background."""
+    def _run():
+        led('busy')
+        time.sleep(1.5)
+        led('ready')
+    threading.Thread(target=_run, daemon=True).start()
+
+# Signal app is ready
+led('ready')
 
 # ── SSE Progress ─────────────────────────────────────────────────────────────
 # Per-client queues for upload/job progress
@@ -49,6 +70,7 @@ def mkdir():
     data = request.json
     try:
         fm.make_directory(data.get("path", ""))
+        led_busy_then_ready()
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
@@ -58,6 +80,7 @@ def delete():
     data = request.json
     try:
         fm.delete_item(data.get("path", ""))
+        led_busy_then_ready()
         return jsonify({"ok": True})
     except FileNotFoundError as e:
         return jsonify({"error": str(e)}), 404
@@ -69,6 +92,7 @@ def rename():
     data = request.json
     try:
         fm.rename_item(data.get("path", ""), data.get("new_name", ""))
+        led_busy_then_ready()
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
@@ -78,6 +102,7 @@ def move():
     data = request.json
     try:
         fm.move_item(data.get("src", ""), data.get("dst_dir", ""))
+        led_busy_then_ready()
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
@@ -94,6 +119,7 @@ def upload():
         return jsonify({"error": "Access denied"}), 403
 
     results = []
+    led('busy')
     for file in request.files.getlist("files"):
         filename = Path(file.filename).name
         out_path = dest / filename
@@ -102,7 +128,7 @@ def upload():
             results.append({"name": filename, "ok": True})
         except Exception as e:
             results.append({"name": filename, "ok": False, "error": str(e)})
-
+    led('ready')
     return jsonify({"results": results})
 
 # ── Download (yt-dlp) ─────────────────────────────────────────────────────────
