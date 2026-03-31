@@ -234,7 +234,6 @@ def eject():
                      ['sudo', 'umount', '-l', fm.MOUNT_PATH]]:
             result = subprocess.run(args, capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
-                led('off')
                 return jsonify({"ok": True})
         # Both failed - remove lock
         os.unlink(LOCK)
