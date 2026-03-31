@@ -183,6 +183,16 @@ def events():
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )
 
+@app.route("/api/play/<path:rel_path>")
+def play_file(rel_path):
+    base = Path(fm.MOUNT_PATH)
+    file_path = (base / rel_path).resolve()
+    if not str(file_path).startswith(str(base)):
+        return jsonify({"error": "Access denied"}), 403
+    if not file_path.is_file():
+        return jsonify({"error": "Not found"}), 404
+    return send_from_directory(str(file_path.parent), file_path.name, conditional=True)
+
 @app.route("/api/eject", methods=["POST"])
 def eject():
     import subprocess

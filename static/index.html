@@ -163,6 +163,9 @@
   }
   .btn-eject:hover { background: rgba(243,156,18,0.3); }
   .btn-eject.visible { display: flex; }
+  body.player-open { padding-bottom: 90px; }
+  #player-bar { display: none; }
+  #player-bar.visible { display: flex; }
   @media (max-width: 600px) {
     .toolbar { gap: 6px; }
     .btn { padding: 8px 12px; font-size: 0.85rem; }
@@ -212,6 +215,17 @@
       <button class="btn btn-primary" id="modal-ok" onclick="submitModal()">OK</button>
     </div>
   </div>
+</div>
+
+<!-- Sticky Player -->
+<div id="player-bar" style="display:none; position:fixed; bottom:0; left:0; right:0; background:var(--surface); border-top:1px solid var(--border); padding:10px 16px; z-index:150; display:none; align-items:center; gap:12px;">
+  <div style="font-size:1.4rem">🎵</div>
+  <div style="flex:1; overflow:hidden;">
+    <div id="player-title" style="font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>
+    <audio id="player-audio" controls style="width:100%; height:32px; margin-top:4px; accent-color:var(--accent2);"></audio>
+  </div>
+  <button id="player-delete" class="btn btn-danger" style="flex-shrink:0; font-size:0.8rem; padding:6px 10px;" title="Löschen">🗑️</button>
+  <button onclick="closePlayer()" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:4px;" title="Schließen">✕</button>
 </div>
 
 <input type="file" id="file-input" multiple style="display:none" accept="audio/*,video/*,.mp3,.m4a,.flac,.wav,.ogg">
@@ -381,13 +395,46 @@ function navigateTo(path) {
 
 let fileRegistry = {};
 
+const AUDIO_EXTS = ['mp3','m4a','flac','wav','ogg','aac','opus','wma'];
+function isAudio(name) { return AUDIO_EXTS.includes(name.split('.').pop().toLowerCase()); }
+
 function handleClick(e) {
   const item = e.currentTarget;
   if (e.target.closest('.file-actions')) return;
   const id = item.dataset.id;
   const entry = fileRegistry[id];
   if (!entry) return;
-  if (entry.type === 'dir') navigateTo(entry.path);
+  if (entry.type === 'dir') { navigateTo(entry.path); return; }
+  if (isAudio(entry.name)) { openPlayer(entry); return; }
+}
+
+let currentPlayerPath = null;
+function openPlayer(entry) {
+  currentPlayerPath = entry.path;
+  document.getElementById('player-title').textContent = entry.name;
+  const audio = document.getElementById('player-audio');
+  audio.src = '/api/play/' + encodeURIComponent(entry.path).replace(/%2F/g, '/');
+  audio.load();
+  audio.play();
+  document.getElementById('player-bar').classList.add('visible');
+  document.body.classList.add('player-open');
+  document.getElementById('player-delete').onclick = () => deleteFromPlayer(entry);
+}
+
+function closePlayer() {
+  const audio = document.getElementById('player-audio');
+  audio.pause();
+  audio.src = '';
+  document.getElementById('player-bar').classList.remove('visible');
+  document.body.classList.remove('player-open');
+  currentPlayerPath = null;
+}
+
+async function deleteFromPlayer(entry) {
+  if (!confirm(`"${entry.name}" wirklich löschen?`)) return;
+  closePlayer();
+  await api('/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: entry.path }) });
+  renderFiles();
 }
 
 function openRenameById(id) {
