@@ -651,12 +651,13 @@ function setupDropzone() {
     dz.classList.remove('drag-over');
 
     const files = Array.from(e.dataTransfer.files);
-    // Nautilus on Linux sends 0-byte file stubs — can't upload those
     const hasRealFiles = files.length > 0 && files.some(f => f.size > 0);
     if (hasRealFiles) {
-      uploadFiles(files);
+      uploadFiles(files.filter(f => f.size > 0));
+    } else if (files.length > 0) {
+      addUploadMessage('⚠️ Drag & Drop: Datei ohne Inhalt empfangen (0 Bytes). Nutze den ⬆️ Upload Button. Tipp: Bei Flatpak-Brave in Flatseal Allow user files aktivieren.');
     } else {
-      addUploadMessage('⚠️ Drag & Drop aus dem Dateimanager funktioniert im Browser nicht. Bitte klicke auf diese Box oder nutze den "⬆️ Upload" Button.');
+      addUploadMessage('⚠️ Keine Dateien empfangen. Nutze den ⬆️ Upload Button.');
     }
   });
 }
