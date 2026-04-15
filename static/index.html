@@ -40,6 +40,24 @@
   .tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
   .tab:hover:not(.active) { color: var(--text); }
 
+/* Storage bar */
+.storage-bar-wrap {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 8px 20px; display: none; align-items: center; gap: 10px; font-size: 0.82rem;
+}
+.storage-bar-wrap.visible { display: flex; }
+.storage-bar-label { color: var(--muted); white-space: nowrap; }
+.storage-bar-outer {
+  flex: 1; height: 8px; background: var(--card); border-radius: 4px; overflow: hidden;
+}
+.storage-bar-inner {
+  height: 100%; border-radius: 4px; transition: width 0.4s;
+  background: linear-gradient(90deg, var(--accent2), #0099cc);
+}
+.storage-bar-inner.warn { background: linear-gradient(90deg, var(--warning), #cc7700); }
+.storage-bar-inner.full { background: linear-gradient(90deg, var(--danger), #a03030); }
+.storage-bar-text { color: var(--muted); white-space: nowrap; min-width: 120px; text-align: right; }
+
   .panel { display: none; padding: 20px; max-width: 900px; margin: 0 auto; }
   .panel.active { display: block; }
 
@@ -60,7 +78,7 @@
   .file-item.selected { background: rgba(0,210,255,0.1); }
   .file-icon { font-size: 1.3rem; width: 28px; text-align: center; flex-shrink: 0; }
   .file-name { flex: 1; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .file-size { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+  .file-size { color: var(--muted); font-size: 0.8rem; white-space: nowrap; min-width: 80px; text-align: right; flex-shrink: 0; }
   .file-actions { display: flex; gap: 6px; opacity: 0; transition: opacity 0.15s; }
   .file-item:hover .file-actions { opacity: 1; }
   .btn-icon {
@@ -96,16 +114,17 @@
   .dropzone.drag-over { border-color: var(--accent2); color: var(--accent2); background: rgba(0,210,255,0.05); }
   .dropzone .icon { font-size: 2.5rem; margin-bottom: 8px; }
 
-  /* Progress bars */
-  .upload-list { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
-  .upload-item { background: var(--surface); border-radius: 8px; padding: 12px; border: 1px solid var(--border); }
-  .upload-item-header { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; }
-  .upload-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
-  .upload-status { color: var(--muted); font-size: 0.85rem; }
-  .progress-bar-bg { background: var(--card); border-radius: 4px; height: 6px; overflow: hidden; }
-  .progress-bar { height: 100%; border-radius: 4px; transition: width 0.3s; background: linear-gradient(90deg, var(--accent2), #0099cc); }
-  .progress-bar.done { background: var(--success); }
-  .progress-bar.error { background: var(--danger); }
+  /* Inline upload progress in file list */
+  .file-item.uploading .file-size { display: none; }
+  .file-item.uploading .file-actions { display: none; }
+  .file-item.uploading .upload-progress { display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-width: 140px; }
+  .upload-progress { display: none; }
+  .upload-pct { color: var(--muted); font-size: 0.8rem; white-space: nowrap; min-width: 32px; text-align: right; }
+  .upload-bar-bg { width: 80px; height: 6px; background: var(--card); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+  .upload-bar { height: 100%; border-radius: 3px; transition: width 0.3s; background: linear-gradient(90deg, var(--accent2), #0099cc); }
+  .upload-bar.done { background: var(--success); }
+  .upload-bar.error { background: var(--danger); }
+  .file-item.upload-error .upload-pct { color: var(--danger); }
 
   /* Download tab */
   .dl-form { background: var(--surface); border-radius: 12px; padding: 20px; border: 1px solid var(--border); margin-bottom: 20px; }
@@ -210,6 +229,12 @@
   <div class="tab" data-tab="download">⬇️ Download</div>
 </div>
 
+<div id="storage-bar" class="storage-bar-wrap">
+  <span class="storage-bar-label">💾</span>
+  <div class="storage-bar-outer"><div id="storage-bar-inner" class="storage-bar-inner" style="width:0%"></div></div>
+  <span id="storage-bar-text" class="storage-bar-text">—</span>
+</div>
+
 <div id="panel-files" class="panel active">
   <div id="files-content"></div>
 </div>
@@ -295,6 +320,7 @@ function applyStatus(mountedState) {
   if (mounted !== wasM && document.getElementById('panel-files').classList.contains('active')) {
     renderFiles();
   }
+  refreshStorage();
 }
 
 function connectStatusStream() {
@@ -334,6 +360,33 @@ async function ejectDevice() {
 }
 api('/status').then(s => applyStatus(s.mounted)).catch(() => {});
 connectStatusStream();
+refreshStorage();
+
+function formatStorage(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  if (bytes < 1073741824) return (bytes/1048576).toFixed(1) + ' MB';
+  return (bytes/1073741824).toFixed(1) + ' GB';
+}
+
+async function refreshStorage() {
+  const wrap = document.getElementById('storage-bar');
+  const inner = document.getElementById('storage-bar-inner');
+  const text = document.getElementById('storage-bar-text');
+  if (!mounted) {
+    wrap.classList.remove('visible');
+    return;
+  }
+  try {
+    const s = await api('/storage');
+    if (!s.mounted) { wrap.classList.remove('visible'); return; }
+    wrap.classList.add('visible');
+    const pct = s.percent;
+    inner.style.width = pct + '%';
+    inner.className = 'storage-bar-inner' + (pct > 90 ? ' full' : pct > 75 ? ' warn' : '');
+    text.textContent = formatStorage(s.free) + ' frei / ' + formatStorage(s.total);
+  } catch(e) {}
+}
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(tab => {
@@ -365,6 +418,9 @@ async function renderFiles() {
   const container = document.getElementById('files-content');
   if (!mounted) {
     container.innerHTML = `<div class="not-mounted"><div class="icon">🔌</div><h2>Shokz nicht verbunden</h2><p>Verbinde die Kopfhörer via USB, um loszulegen.</p></div>`;
+    // Remove upload section when not mounted
+    const us = document.getElementById('upload-section');
+    if (us) us.remove();
     return;
   }
   try {
@@ -389,13 +445,12 @@ async function renderFiles() {
       <button class="btn btn-primary" onclick="openUpload()">⬆️ Upload</button>
     </div>`;
 
-    // Files
-    let list = '';
+    // Files - always create file-list div (needed for inline upload progress)
+    fileRegistry = {};
+    let list = '<div class="file-list" id="file-list">';
     if (data.entries.length === 0) {
-      list = `<div class="empty-state"><div class="icon">📭</div><p>Dieser Ordner ist leer.</p></div>`;
+      list += '<div class="empty-state" id="empty-state"><div class="icon">📭</div><p>Dieser Ordner ist leer.</p></div>';
     } else {
-      fileRegistry = {};
-      list = '<div class="file-list" id="file-list">';
       data.entries.forEach((e, i) => {
         const id = 'fi' + i;
         fileRegistry[id] = e;
@@ -408,18 +463,37 @@ async function renderFiles() {
           + '<button class="btn-icon danger" title="Delete" onclick="confirmDeleteById(\'' + id + '\')" >🗑️</button>'
           + '</div></div>';
       });
-      list += '</div>';
+    }
+    list += '</div>';
+
+    container.innerHTML = bc + toolbar + list;
+
+    // Re-attach any in-progress upload items to the new file-list
+    // (renderFiles() rebuilds the DOM, so we must move them back)
+    if (_uploadCount > 0 && uploadItemEls.length > 0) {
+      const newList = document.getElementById('file-list');
+      if (newList) {
+        // Remove empty state since we have upload items
+        const es = newList.querySelector('#empty-state');
+        if (es) es.remove();
+        uploadItemEls.forEach(el => {
+          if (el && el.parentNode !== newList) newList.appendChild(el);
+        });
+      }
     }
 
-    // Drop zone
-    const dz = `<div id="dropzone" class="dropzone" onclick="openUpload()">
-      <div class="icon">⬆️</div>
-      <div>Drop files here or click to upload</div>
-      <div style="font-size:0.8rem;margin-top:4px;color:var(--muted)">MP3, M4A, FLAC, WAV, ...</div>
-    </div>
-    <div id="upload-list" class="upload-list"></div>`;
-
-    container.innerHTML = bc + toolbar + list + dz;
+    // Persistent upload section (survives renderFiles() rebuilds)
+    let uploadSection = document.getElementById('upload-section');
+    if (!uploadSection) {
+      uploadSection = document.createElement('div');
+      uploadSection.id = 'upload-section';
+      uploadSection.innerHTML = `<div id="dropzone" class="dropzone" onclick="openUpload()">
+        <div class="icon">⬆️</div>
+        <div>Drop files here or click to upload</div>
+        <div style="font-size:0.8rem;margin-top:4px;color:var(--muted)">MP3, M4A, FLAC, WAV, ...</div>
+      </div>`;
+      container.parentNode.appendChild(uploadSection);
+    }
     setupFileDrag();
     setupDropzone();
   } catch(e) {
@@ -575,26 +649,67 @@ function setupDropzone() {
   dz.addEventListener('drop', e => {
     e.preventDefault();
     dz.classList.remove('drag-over');
-    uploadFiles(Array.from(e.dataTransfer.files));
+
+    const files = Array.from(e.dataTransfer.files);
+    // Nautilus on Linux sends 0-byte file stubs — can't upload those
+    const hasRealFiles = files.length > 0 && files.some(f => f.size > 0);
+    if (hasRealFiles) {
+      uploadFiles(files);
+    } else {
+      addUploadMessage('⚠️ Drag & Drop aus dem Dateimanager funktioniert im Browser nicht. Bitte klicke auf diese Box oder nutze den "⬆️ Upload" Button.');
+    }
   });
 }
 
-async function uploadFiles(files) {
-  const list = document.getElementById('upload-list');
-  if (!list) return;
+function addUploadMessage(msg) {
+  const section = document.getElementById('upload-section');
+  if (!section) return;
+  const item = document.createElement('div');
+  item.style.cssText = 'padding:8px; color:var(--warning); font-size:0.9rem; margin-top:8px;';
+  item.textContent = msg;
+  section.appendChild(item);
+  setTimeout(() => item.remove(), 8000);
+}
 
+
+let _uploadCount = 0;  // count of active uploads (prevents renderFiles from clobbering upload items)
+let uploadItemEls = [];  // references to upload item DOM elements
+
+async function uploadFiles(files) {
+  _uploadCount++;
+  const fileList = document.getElementById('file-list');
+  if (!fileList) return;
+  // Remove empty state if present
+  const emptyState = fileList.querySelector('#empty-state');
+  if (emptyState) emptyState.remove();
+
+  // 1. Insert ALL upload items into the file list immediately
+  const items = [];
   for (const file of files) {
-    const itemId = 'up-' + Date.now() + Math.random().toString(36).slice(2);
+    const itemId = 'up-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+    const ext = file.name.split('.').pop().toLowerCase();
+    const icon = ['mp3','m4a','flac','wav','ogg','aac','opus','wma'].includes(ext) ? '🎵' : '📄';
     const item = document.createElement('div');
-    item.className = 'upload-item';
+    item.className = 'file-item uploading';
     item.id = itemId;
     item.innerHTML = `
-      <div class="upload-item-header">
-        <div class="upload-item-name">🎵 ${file.name}</div>
-        <div class="upload-status" id="${itemId}-status">0%</div>
-      </div>
-      <div class="progress-bar-bg"><div class="progress-bar" id="${itemId}-bar" style="width:0%"></div></div>`;
-    list.appendChild(item);
+      <div class="file-icon">${icon}</div>
+      <div class="file-name">${file.name}</div>
+      <div class="upload-progress">
+        <div class="upload-bar-bg"><div class="upload-bar" id="${itemId}-bar" style="width:0%"></div></div>
+        <span class="upload-pct" id="${itemId}-pct">Warten...</span>
+      </div>`;
+    fileList.appendChild(item);
+    items.push({ file, itemId, el: item });
+  }
+
+  // Track upload item elements so renderFiles() can preserve them
+  uploadItemEls = items.map(it => it.el);
+
+  // 2. Upload sequentially, but don't call renderFiles() during uploads
+  for (const { file, itemId } of items) {
+    const pctEl = document.getElementById(itemId + '-pct');
+    if (pctEl) pctEl.textContent = '0%';
 
     await new Promise(resolve => {
       const fd = new FormData();
@@ -606,27 +721,86 @@ async function uploadFiles(files) {
       xhr.upload.onprogress = e => {
         if (e.lengthComputable) {
           const pct = Math.round(e.loaded / e.total * 100);
-          document.getElementById(itemId + '-bar').style.width = pct + '%';
-          document.getElementById(itemId + '-status').textContent = pct + '%';
+          const bar = document.getElementById(itemId + '-bar');
+          const pctEl = document.getElementById(itemId + '-pct');
+          if (bar) bar.style.width = pct + '%';
+          if (pctEl) pctEl.textContent = pct + '%';
         }
       };
       xhr.onload = () => {
         const bar = document.getElementById(itemId + '-bar');
-        const status = document.getElementById(itemId + '-status');
+        const pctEl = document.getElementById(itemId + '-pct');
+        const itemEl = document.getElementById(itemId);
         if (xhr.status === 200) {
-          bar.style.width = '100%'; bar.className = 'progress-bar done';
-          status.textContent = '✅ Done';
+          if (bar) { bar.style.width = '100%'; bar.className = 'upload-bar done'; }
+          if (pctEl) pctEl.textContent = '✅';
+          // After brief display, convert to a regular file item
+          setTimeout(() => {
+            if (!itemEl) return;
+            // Fade out progress
+            const progressDiv = itemEl.querySelector('.upload-progress');
+            if (progressDiv) {
+              progressDiv.style.transition = 'opacity 0.3s';
+              progressDiv.style.opacity = '0';
+            }
+            setTimeout(() => {
+              // Rebuild item to match regular file items exactly
+              itemEl.className = 'file-item';
+              itemEl.draggable = true;
+              // Build the file path for registry
+              const filePath = currentPath ? currentPath + '/' + file.name : file.name;
+              const regId = itemId;  // reuse as registry key
+              fileRegistry[regId] = { name: file.name, path: filePath, type: 'file', size: file.size };
+              itemEl.dataset.id = regId;
+              itemEl.dataset.type = 'file';
+              // Replace innerHTML to match regular file items
+              itemEl.innerHTML = '<div class="file-icon">🎵</div>'
+                + '<div class="file-name">' + file.name + '</div>'
+                + '<div class="file-size">' + formatSize(file.size) + '</div>'
+                + '<div class="file-actions" onclick="event.stopPropagation()">'
+                + '<button class="btn-icon" title="Rename" onclick="openRenameById(\'' + regId + '\')" >✏️</button>'
+                + '<button class="btn-icon danger" title="Delete" onclick="confirmDeleteById(\'' + regId + '\')" >🗑️</button>'
+                + '</div>';
+              // Re-attach click handler
+              itemEl.addEventListener('click', handleClick);
+              // Remove from upload tracking
+              uploadItemEls = uploadItemEls.filter(el => el !== itemEl);
+            }, 300);
+          }, 1200);
         } else {
-          bar.className = 'progress-bar error';
-          status.textContent = '❌ Error';
+          if (bar) bar.className = 'upload-bar error';
+          if (pctEl) pctEl.textContent = '❌';
+          if (itemEl) itemEl.className = 'file-item upload-error';
         }
-        setTimeout(() => renderFiles(), 1000);
         resolve();
       };
-      xhr.onerror = () => { resolve(); };
+      xhr.timeout = 300000;  // 5 min per file (slow USB on Pi Zero)
+      xhr.ontimeout = () => {
+        const bar = document.getElementById(itemId + '-bar');
+        const pctEl = document.getElementById(itemId + '-pct');
+        if (bar) bar.className = 'upload-bar error';
+        if (pctEl) pctEl.textContent = '⏱️';
+        const el = document.getElementById(itemId);
+        if (el) el.className = 'file-item upload-error';
+        resolve();
+      };
+      xhr.onerror = () => {
+        const bar = document.getElementById(itemId + '-bar');
+        const pctEl = document.getElementById(itemId + '-pct');
+        if (bar) bar.className = 'upload-bar error';
+        if (pctEl) pctEl.textContent = '❌';
+        const el = document.getElementById(itemId);
+        if (el) el.className = 'file-item upload-error';
+        resolve();
+      };
       xhr.send(fd);
     });
   }
+
+  // 3. All done — refresh the file list once to replace upload items with real entries
+  _uploadCount--;
+  uploadItemEls = [];
+  setTimeout(() => { renderFiles(); refreshStorage(); }, 600);
 }
 
 // ── Rename / Delete / Mkdir ─────────────────────────────────────────────────
@@ -710,7 +884,7 @@ async function startDownload() {
       }
       if (job.status === 'done' || job.status === 'error') {
         evtSrc.close();
-        if (job.status === 'done') setTimeout(() => renderFiles(), 500);
+        if (job.status === 'done') setTimeout(() => { renderFiles(); refreshStorage(); }, 500);
       }
     } catch(err) {}
   };

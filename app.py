@@ -219,6 +219,26 @@ def play_file(rel_path):
         return jsonify({"error": "Not found"}), 404
     return send_from_directory(str(file_path.parent), file_path.name, conditional=True)
 
+@app.route("/api/storage")
+def storage():
+    """Return disk usage info for the mounted device."""
+    if not fm.is_mounted():
+        return jsonify({"mounted": False})
+    try:
+        stat = os.statvfs(fm.MOUNT_PATH)
+        total = stat.f_blocks * stat.f_frsize
+        free = stat.f_bavail * stat.f_frsize
+        used = total - free
+        return jsonify({
+            "mounted": True,
+            "total": total,
+            "used": used,
+            "free": free,
+            "percent": round(used / total * 100, 1) if total > 0 else 0
+        })
+    except Exception as e:
+        return jsonify({"mounted": False, "error": str(e)})
+
 @app.route("/api/eject", methods=["POST"])
 def eject():
     LOCK = "/run/shokz-ejected"

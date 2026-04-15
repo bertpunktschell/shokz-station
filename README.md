@@ -5,7 +5,7 @@ A lightweight web-based file manager and music downloader for **Shokz bone condu
 ## Features
 
 - 📁 **File Manager** — Browse, rename, delete, create folders, drag-to-move files
-- ⬆️ **Upload** — Drag & drop or file picker with per-file progress bars
+- ⬆️ **Upload** — Drag & drop or file picker; files appear inline in the file list with live progress bars, then convert to regular file items on completion
 - ⬇️ **Download** — Paste a YouTube or SoundCloud URL, downloads directly to the Shokz
 - ⏏️ **Safe Eject** — Properly unmounts before unplugging
 - 🔄 **Auto-Mount** — Shokz is automatically mounted when plugged in
@@ -68,7 +68,7 @@ After installation, open `http://<pi-ip>:8080` in your browser.
 
 | Service | Description |
 |---|---|
-| `shokz-station` | Web app (gunicorn) |
+| `shokz-station` | Web app (gunicorn: 3 workers, 4 threads, 300s timeout) |
 | `shokz-watch` | USB automount watcher (polls every 3s) |
 
 ```bash
@@ -88,6 +88,9 @@ sudo journalctl -u shokz-station -f
 - Pi 3/4 is significantly faster
 - The Shokz shows up as a generic USB Mass Storage device (`/dev/sdX1`)
 - FAT32 filesystem — filenames are restricted to ASCII-safe characters
+- Inline audio player with seek bar for previewing tracks in the browser
+- Storage usage bar shown when device is mounted
+- LED status indicator on Pi Zero (boot → ready → busy patterns)
 
 ## ⚡ Pi Zero 1W Boot Performance
 
