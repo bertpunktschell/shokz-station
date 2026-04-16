@@ -112,6 +112,39 @@
   .btn-icon.danger:hover { background: rgba(231,76,60,0.2); border-color: var(--danger); color: var(--danger); }
   .file-item.drag-over-dir { background: rgba(0,210,255,0.15) !important; border: 1px dashed var(--accent2); }
 
+  /* Search/Filter */
+  .search-wrap {
+    flex: 1; min-width: 140px; position: relative;
+  }
+  .search-wrap input {
+    width: 100%; background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 32px 8px 12px; border-radius: 8px; font-size: 0.9rem;
+  }
+  .search-wrap input:focus { outline: none; border-color: var(--accent2); }
+  .search-wrap .search-clear {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 2px 4px;
+    display: none;
+  }
+  .search-wrap .search-clear.visible { display: block; }
+  .search-wrap .search-clear:hover { color: var(--text); }
+  .file-item.hidden-by-search { display: none; }
+
+  /* Multi-select */
+  .file-checkbox {
+    width: 18px; height: 18px; flex-shrink: 0; cursor: pointer;
+    accent-color: var(--accent2);
+  }
+  .select-all-checkbox { margin-right: 4px; accent-color: var(--accent2); }
+  .batch-bar {
+    display: none; align-items: center; gap: 10px; padding: 10px 16px;
+    background: rgba(0,210,255,0.08); border: 1px solid var(--accent2); border-radius: 10px;
+    margin-bottom: 12px; font-size: 0.9rem;
+  }
+  .batch-bar.visible { display: flex; }
+  .batch-count { color: var(--accent2); font-weight: 600; }
+  .batch-bar .btn { font-size: 0.85rem; padding: 6px 12px; }
+
   /* Toolbar */
   .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
   .btn {
@@ -233,12 +266,14 @@
   #player-close { background: none; border: none; color: var(--muted); font-size: 1.1rem; cursor: pointer; padding: 4px; flex-shrink: 0; transition: color 0.15s; }
   #player-close:hover { color: var(--text); }
   @media (max-width: 600px) {
-    .toolbar { gap: 6px; }
+    .toolbar { gap: 6px; flex-wrap: wrap; }
     .btn { padding: 8px 12px; font-size: 0.85rem; }
     .file-actions { opacity: 1; }
     .panel { padding: 12px; }
     header { padding: 10px 12px; }
     header h1 { font-size: 1rem; }
+    .search-wrap { order: 10; min-width: 100%; margin-top: 4px; }
+    .batch-bar { flex-wrap: wrap; gap: 6px; }
   }
 </style>
 </head>
@@ -576,8 +611,18 @@ async function renderFiles() {
     }
     bc += '</div>';
     const toolbar = `<div class="toolbar">
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;font-size:0.9rem;"><input type="checkbox" class="select-all-checkbox" id="select-all" onchange="toggleSelectAll(this.checked)" /> Alle</label>
       <button class="btn btn-secondary" onclick="openMkdir()">📁 Neuer Ordner</button>
       <button class="btn btn-primary" onclick="openUpload()">⬆️ Upload</button>
+      <div class="search-wrap">
+        <input type="text" id="search-input" placeholder="🔍 Suchen..." oninput="filterFiles(this.value)" />
+        <button class="search-clear" id="search-clear" onclick="clearSearch()">✕</button>
+      </div>
+    </div>
+    <div class="batch-bar" id="batch-bar">
+      <span><span class="batch-count" id="batch-count">0</span> ausgewählt</span>
+      <button class="btn btn-danger" onclick="batchDelete()">🗑️ Löschen</button>
+      <button class="btn btn-secondary" onclick="clearSelection()">✕ Aufheben</button>
     </div>`;
     fileRegistry = {};
     let list = '<div class="file-list" id="file-list">';
@@ -587,7 +632,8 @@ async function renderFiles() {
       data.entries.forEach((e, i) => {
         const id = 'fi' + i;
         fileRegistry[id] = e;
-        list += '<div class="file-item" data-id="' + id + '" data-type="' + e.type + '" draggable="true">'
+        list += '<div class="file-item" data-id="' + id + '" data-type="' + e.type + '" data-name="' + e.name.toLowerCase().replace(/"/g, '&quot;') + '" draggable="true">'
+          + '<input type="checkbox" class="file-checkbox" data-id="' + id + '" onclick="event.stopPropagation(); onFileCheckboxChange()" />'
           + '<div class="file-icon">' + fileIcon(e) + '</div>'
           + '<div class="file-name">' + e.name + '</div>'
           + '<div class="file-size">' + (e.type === 'file' ? formatSize(e.size) : '') + '</div>'
@@ -627,7 +673,7 @@ async function renderFiles() {
   }
 }
 
-function navigateTo(path) { currentPath = path; renderFiles(); }
+function navigateTo(path) { currentPath = path; clearSelection(); clearSearch(); renderFiles(); }
 
 let fileRegistry = {};
 const AUDIO_EXTS = ['mp3','m4a','flac','wav','ogg','aac','opus','wma'];
@@ -808,6 +854,94 @@ async function uploadFiles(files) {
   }
   _uploadCount--; uploadItemEls = [];
   setTimeout(() => { renderFiles(); refreshStorage(); }, 600);
+}
+
+// ── Search / Filter ──────────────────────────────────────────────────────────
+function filterFiles(query) {
+  const q = query.trim().toLowerCase();
+  const clearBtn = document.getElementById('search-clear');
+  clearBtn.classList.toggle('visible', q.length > 0);
+  const list = document.getElementById('file-list');
+  if (!list) return;
+  list.querySelectorAll('.file-item').forEach(item => {
+    const name = item.dataset.name || '';
+    item.classList.toggle('hidden-by-search', q.length > 0 && !name.includes(q));
+  });
+  // Update select-all state after filter
+  updateSelectAllState();
+}
+
+function clearSearch() {
+  const input = document.getElementById('search-input');
+  if (input) { input.value = ''; filterFiles(''); }
+}
+
+// ── Multi-Select / Batch ─────────────────────────────────────────────────────
+function onFileCheckboxChange() {
+  updateBatchBar();
+  updateSelectAllState();
+}
+
+function updateBatchBar() {
+  const checked = document.querySelectorAll('.file-checkbox:checked');
+  const bar = document.getElementById('batch-bar');
+  const count = document.getElementById('batch-count');
+  if (!bar) return;
+  const n = checked.length;
+  count.textContent = n;
+  bar.classList.toggle('visible', n > 0);
+}
+
+function updateSelectAllState() {
+  const selectAll = document.getElementById('select-all');
+  if (!selectAll) return;
+  const visible = document.querySelectorAll('.file-item:not(.hidden-by-search) .file-checkbox');
+  const checked = document.querySelectorAll('.file-item:not(.hidden-by-search) .file-checkbox:checked');
+  if (visible.length === 0) { selectAll.checked = false; selectAll.indeterminate = false; return; }
+  selectAll.checked = checked.length === visible.length;
+  selectAll.indeterminate = checked.length > 0 && checked.length < visible.length;
+}
+
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.file-item:not(.hidden-by-search) .file-checkbox').forEach(cb => { cb.checked = checked; });
+  updateBatchBar();
+}
+
+function clearSelection() {
+  document.querySelectorAll('.file-checkbox').forEach(cb => { cb.checked = false; });
+  const selectAll = document.getElementById('select-all');
+  if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+  updateBatchBar();
+}
+
+function batchDelete() {
+  const checked = document.querySelectorAll('.file-checkbox:checked');
+  if (checked.length === 0) return;
+  const items = [];
+  checked.forEach(cb => {
+    const entry = fileRegistry[cb.dataset.id];
+    if (entry) items.push(entry);
+  });
+  const count = items.length;
+  const names = items.slice(0, 5).map(i => i.name).join(', ');
+  const suffix = count > 5 ? ` und ${count - 5} weitere` : '';
+  document.getElementById('confirm-title').textContent = 'Batch-Löschung';
+  document.getElementById('confirm-msg').textContent = `${count} Elemente löschen? (${names}${suffix})`;
+  document.getElementById('confirm-modal').classList.add('show');
+  document.getElementById('confirm-ok').onclick = async () => {
+    closeConfirm();
+    let ok = 0, fail = 0;
+    for (const entry of items) {
+      try {
+        await api('/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: entry.path }) });
+        ok++;
+      } catch(e) { fail++; }
+    }
+    clearSelection();
+    renderFiles();
+    refreshStorage();
+    if (fail > 0) { addUploadMessage(`⚠️ ${fail} von ${count} konnten nicht gelöscht werden.`); }
+  };
 }
 
 // ── Rename / Delete / Mkdir ─────────────────────────────────────────────────
