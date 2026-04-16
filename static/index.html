@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Shokz Station</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎧</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2002/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎧</text></svg>">
 <style>
   :root {
     --bg: #1a1a2e; --surface: #16213e; --card: #0f3460;
@@ -39,6 +39,28 @@
   }
   .tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
   .tab:hover:not(.active) { color: var(--text); }
+
+  /* Active downloads tab badge */
+  .tab-badge {
+    background: var(--accent2);
+    color: #000;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-left: 4px;
+    animation: badge-pulse 2s infinite;
+  }
+  .tab-badge.done-badge {
+    background: var(--success);
+    animation: none;
+  }
+  @keyframes badge-pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+  #tab-active {
+    margin-left: auto;
+    font-size: 0.85rem;
+  }
 
 /* Storage bar */
 .storage-bar-wrap {
@@ -126,7 +148,7 @@
   .upload-bar.error { background: var(--danger); }
   .file-item.upload-error .upload-pct { color: var(--danger); }
 
-  /* Download tab */
+  /* Download forms */
   .dl-form { background: var(--surface); border-radius: 12px; padding: 20px; border: 1px solid var(--border); margin-bottom: 20px; }
   .dl-form label { display: block; margin-bottom: 8px; font-weight: 500; }
   .input-row { display: flex; gap: 8px; }
@@ -136,25 +158,30 @@
   }
   input:focus { outline: none; border-color: var(--accent2); }
 
-  .dl-preview { background: var(--card); border-radius: 8px; padding: 14px; margin-top: 14px; display: none; }
-  .dl-preview.show { display: flex; gap: 12px; align-items: flex-start; }
-  .dl-preview img { width: 80px; height: 60px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
   .spinner { width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--accent2); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .dl-status-row { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.9rem; }
-  .dl-preview-info { flex: 1; }
-  .dl-preview-title { font-weight: 600; margin-bottom: 4px; }
-  .dl-preview-meta { color: var(--muted); font-size: 0.85rem; }
+
+  /* Job cards */
+  .progress-bar-bg { width: 100%; height: 6px; background: var(--card); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .progress-bar { height: 100%; border-radius: 3px; transition: width 0.3s; background: linear-gradient(90deg, var(--accent2), #0099cc); }
+  .progress-bar.done { background: var(--success); }
+  .progress-bar.error { background: var(--danger); }
 
   .dl-jobs { display: flex; flex-direction: column; gap: 10px; }
   .dl-job { background: var(--surface); border-radius: 10px; padding: 14px; border: 1px solid var(--border); }
-  .dl-job-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
-  .dl-job-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%; }
-  .dl-job-status { font-size: 0.85rem; }
+  .dl-job-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .dl-job-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .dl-job-tracknum { color: var(--accent2); font-size: 0.85rem; font-weight: 600; display: none; margin-right: 8px; flex-shrink: 0; }
+  .dl-job-status { font-size: 0.85rem; min-width: 80px; text-align: right; flex-shrink: 0; }
   .dl-job-status.done { color: var(--success); }
   .dl-job-status.error { color: var(--danger); }
-  .dl-job-status.downloading, .dl-job-status.starting { color: var(--accent2); }
+  .dl-job-status.downloading, .dl-job-status.starting, .dl-job-status.connecting { color: var(--accent2); }
   .dl-job-msg { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
+
+  /* Active downloads header */
+  .active-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .active-header h3 { margin: 0; font-size: 1.1rem; }
 
   /* Modal */
   .modal-overlay {
@@ -227,6 +254,7 @@
 <div class="tabs">
   <div class="tab active" data-tab="files">📁 Files</div>
   <div class="tab" data-tab="download">⬇️ Download</div>
+  <div class="tab" data-tab="active" id="tab-active" style="display:none;">⬇️ <span id="tab-active-label">Downloads</span> <span class="tab-badge" id="tab-active-count">0</span></div>
 </div>
 
 <div id="storage-bar" class="storage-bar-wrap">
@@ -240,15 +268,52 @@
 </div>
 
 <div id="panel-download" class="panel">
+  <!-- Tidal Section — only input forms -->
+  <div class="dl-form" style="border-color: rgba(0,210,255,0.3);">
+    <label>🌊 Tidal</label>
+    <div id="tidal-auth-section" style="margin-bottom:12px;">
+      <div id="tidal-auth-logged-out" style="display:none;">
+        <button class="btn btn-primary" onclick="tidalLogin()" id="btn-tidal-login">🔑 Bei Tidal anmelden</button>
+      </div>
+      <div id="tidal-auth-logged-in" style="display:none;">
+        <span style="color:var(--success); font-size:0.9rem;">✅ Tidal angemeldet</span>
+        <button class="btn btn-secondary" onclick="tidalLogout()" style="margin-left:8px; font-size:0.8rem; padding:4px 10px;">Abmelden</button>
+      </div>
+      <div id="tidal-auth-pending" style="display:none;">
+        <div class="dl-status-row"><div class="spinner"></div><span>Warte auf Tidal-Login...</span></div>
+        <div id="tidal-auth-pending-msg" style="margin-top:8px; font-size:0.85rem; color:var(--muted);"></div>
+        <button class="btn btn-secondary" onclick="tidalCancelLogin()" style="margin-top:8px;">Abbrechen</button>
+      </div>
+    </div>
+    <div class="input-row">
+      <input type="url" id="tidal-url" placeholder="https://tidal.com/album/... oder track/..." onkeydown="if(event.key==='Enter') startTidalDownload()" />
+      <button class="btn btn-primary" onclick="startTidalDownload()" id="btn-tidal-dl">⬇️ Laden</button>
+    </div>
+    <div style="margin-top:8px; color:var(--muted); font-size:0.82rem;">320 kbps M4A — Download kann auf dem Pi Zero mehrere Minuten dauern</div>
+  </div>
+
+  <!-- YouTube Section — only input forms -->
   <div class="dl-form">
-    <label>YouTube / SoundCloud URL</label>
+    <label>▶️ YouTube / SoundCloud</label>
     <div class="input-row">
       <input type="url" id="dl-url" placeholder="https://www.youtube.com/watch?v=..." onkeydown="if(event.key==='Enter') startDownload()" />
       <button class="btn btn-primary" onclick="startDownload()" id="btn-dl">⬇️ Laden</button>
     </div>
     <div style="margin-top:8px; color:var(--muted); font-size:0.82rem;">⚠️ Download kann auf dem Pi Zero mehrere Minuten dauern</div>
   </div>
-  <div id="dl-jobs" class="dl-jobs"></div>
+</div>
+
+<!-- Active Downloads Panel — own tab, only job cards -->
+<div id="panel-active" class="panel">
+  <div class="active-header">
+    <h3>⬇️ Downloads</h3>
+    <button class="btn btn-secondary" onclick="clearDoneJobs()" style="font-size:0.8rem;">✅ Aufräumen</button>
+  </div>
+  <div id="active-downloads-list" class="dl-jobs"></div>
+  <div id="active-empty" class="empty-state" style="display:none;">
+    <div class="icon">📭</div>
+    <p>Keine aktiven Downloads</p>
+  </div>
 </div>
 
 <!-- Rename Modal -->
@@ -300,7 +365,69 @@ const api = (path, opts) => fetch('/api' + path, opts).then(r => r.json());
 let currentPath = '';
 let mounted = false;
 let modalCallback = null;
-let pendingDlInfo = null;
+
+// ── Active Downloads Tracking ──────────────────────────────────────────────
+let activeJobs = new Map();
+
+function addActiveJob(jobId, type, url) {
+  activeJobs.set(jobId, { type, url, done: false, error: false });
+  updateActiveTab();
+}
+
+function markJobDone(jobId, error) {
+  if (activeJobs.has(jobId)) {
+    activeJobs.get(jobId).done = true;
+    if (error) activeJobs.get(jobId).error = true;
+    updateActiveTab();
+  }
+}
+
+function updateActiveTab() {
+  const tab = document.getElementById('tab-active');
+  const countEl = document.getElementById('tab-active-count');
+  const running = [...activeJobs.values()].filter(j => !j.done).length;
+  const total = activeJobs.size;
+
+  if (total === 0) {
+    tab.style.display = 'none';
+    return;
+  }
+
+  tab.style.display = '';
+  if (running > 0) {
+    countEl.textContent = running;
+    countEl.className = 'tab-badge';
+    countEl.style.display = '';
+    tab.style.color = '';
+  } else {
+    countEl.textContent = '✓';
+    countEl.className = 'tab-badge done-badge';
+    countEl.style.display = '';
+    tab.style.color = 'var(--success)';
+  }
+
+  // Show/hide empty state in active panel
+  const emptyEl = document.getElementById('active-empty');
+  const listEl = document.getElementById('active-downloads-list');
+  if (total === 0 || listEl.children.length > 0) {
+    emptyEl.style.display = 'none';
+  } else {
+    emptyEl.style.display = '';
+  }
+}
+
+function clearDoneJobs() {
+  const doneIds = [...activeJobs.entries()].filter(([_, j]) => j.done).map(([id]) => id);
+  doneIds.forEach(id => {
+    const card = document.getElementById('job-' + id);
+    if (card) card.remove();
+    activeJobs.delete(id);
+  });
+  updateActiveTab();
+  if (activeJobs.size === 0) {
+    switchTab('download');
+  }
+}
 
 // ── Status polling ──────────────────────────────────────────────────────────
 function applyStatus(mountedState) {
@@ -373,10 +500,7 @@ async function refreshStorage() {
   const wrap = document.getElementById('storage-bar');
   const inner = document.getElementById('storage-bar-inner');
   const text = document.getElementById('storage-bar-text');
-  if (!mounted) {
-    wrap.classList.remove('visible');
-    return;
-  }
+  if (!mounted) { wrap.classList.remove('visible'); return; }
   try {
     const s = await api('/storage');
     if (!s.mounted) { wrap.classList.remove('visible'); return; }
@@ -389,14 +513,18 @@ async function refreshStorage() {
 }
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
+function switchTab(tabName) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  const tab = document.querySelector(`.tab[data-tab="${tabName}"]`);
+  if (tab) tab.classList.add('active');
+  const panel = document.getElementById('panel-' + tabName);
+  if (panel) panel.classList.add('active');
+  if (tabName === 'files') renderFiles();
+}
+
 document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
-    if (tab.dataset.tab === 'files') renderFiles();
-  });
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
 
 // ── File Manager ────────────────────────────────────────────────────────────
@@ -418,34 +546,26 @@ async function renderFiles() {
   const container = document.getElementById('files-content');
   if (!mounted) {
     container.innerHTML = `<div class="not-mounted"><div class="icon">🔌</div><h2>Shokz nicht verbunden</h2><p>Verbinde die Kopfhörer via USB, um loszulegen.</p></div>`;
-    // Remove upload section when not mounted
     const us = document.getElementById('upload-section');
     if (us) us.remove();
     return;
   }
   try {
     const data = await api('/files/' + currentPath);
-    
-    // Breadcrumb
     let bc = `<div class="breadcrumb"><a onclick="navigateTo('')">🏠 root</a>`;
     if (currentPath) {
       const parts = currentPath.split('/');
       let acc = '';
       parts.forEach((p, i) => {
         acc += (i > 0 ? '/' : '') + p;
-        const path = acc;
-        bc += `<span>/</span><a onclick="navigateTo('${path}')">${p}</a>`;
+        bc += `<span>/</span><a onclick="navigateTo('${acc}')">${p}</a>`;
       });
     }
     bc += '</div>';
-
-    // Toolbar
     const toolbar = `<div class="toolbar">
       <button class="btn btn-secondary" onclick="openMkdir()">📁 Neuer Ordner</button>
       <button class="btn btn-primary" onclick="openUpload()">⬆️ Upload</button>
     </div>`;
-
-    // Files - always create file-list div (needed for inline upload progress)
     fileRegistry = {};
     let list = '<div class="file-list" id="file-list">';
     if (data.entries.length === 0) {
@@ -465,15 +585,10 @@ async function renderFiles() {
       });
     }
     list += '</div>';
-
     container.innerHTML = bc + toolbar + list;
-
-    // Re-attach any in-progress upload items to the new file-list
-    // (renderFiles() rebuilds the DOM, so we must move them back)
     if (_uploadCount > 0 && uploadItemEls.length > 0) {
       const newList = document.getElementById('file-list');
       if (newList) {
-        // Remove empty state since we have upload items
         const es = newList.querySelector('#empty-state');
         if (es) es.remove();
         uploadItemEls.forEach(el => {
@@ -481,8 +596,6 @@ async function renderFiles() {
         });
       }
     }
-
-    // Persistent upload section (survives renderFiles() rebuilds)
     let uploadSection = document.getElementById('upload-section');
     if (!uploadSection) {
       uploadSection = document.createElement('div');
@@ -501,13 +614,9 @@ async function renderFiles() {
   }
 }
 
-function navigateTo(path) {
-  currentPath = path;
-  renderFiles();
-}
+function navigateTo(path) { currentPath = path; renderFiles(); }
 
 let fileRegistry = {};
-
 const AUDIO_EXTS = ['mp3','m4a','flac','wav','ogg','aac','opus','wma'];
 function isAudio(name) { return AUDIO_EXTS.includes(name.split('.').pop().toLowerCase()); }
 
@@ -521,7 +630,6 @@ function handleClick(e) {
   if (isAudio(entry.name)) { openPlayer(entry); return; }
 }
 
-let currentPlayerPath = null;
 const _audio = document.getElementById('player-audio');
 const _seek  = document.getElementById('player-seek');
 const _cur   = document.getElementById('player-cur');
@@ -541,88 +649,48 @@ _audio.addEventListener('timeupdate', () => {
   const pct = (_audio.currentTime / _audio.duration) * 100;
   _seek.style.background = `linear-gradient(to right, var(--accent2) ${pct}%, var(--border) ${pct}%)`;
 });
-_audio.addEventListener('durationchange', () => {
-  _seek.max = _audio.duration;
-  _dur.textContent = fmtTime(_audio.duration);
-});
+_audio.addEventListener('durationchange', () => { _seek.max = _audio.duration; _dur.textContent = fmtTime(_audio.duration); });
 _audio.addEventListener('play',  () => { _btn.textContent = '⏸'; });
 _audio.addEventListener('pause', () => { _btn.textContent = '▶'; });
 _audio.addEventListener('ended', () => { _btn.textContent = '▶'; _seek.value = 0; _cur.textContent = '0:00'; });
-
 _seek.addEventListener('input', () => { _audio.currentTime = _seek.value; });
 
-function togglePlay() {
-  _audio.paused ? _audio.play() : _audio.pause();
-}
+function togglePlay() { _audio.paused ? _audio.play() : _audio.pause(); }
 
 function openPlayer(entry) {
-  currentPlayerPath = entry.path;
-  // strip extension from display name
   document.getElementById('player-title').textContent = entry.name.replace(/\.[^.]+$/, '');
   _audio.src = '/api/play/' + entry.path.split('/').map(encodeURIComponent).join('/');
   _seek.value = 0; _cur.textContent = '0:00'; _dur.textContent = '0:00';
   _seek.style.background = 'var(--border)';
-  _audio.load();
-  _audio.play();
+  _audio.load(); _audio.play();
   document.getElementById('player-bar').classList.add('visible');
   document.body.classList.add('player-open');
 }
 
 function closePlayer() {
-  _audio.pause();
-  _audio.src = '';
+  _audio.pause(); _audio.src = '';
   document.getElementById('player-bar').classList.remove('visible');
   document.body.classList.remove('player-open');
-  currentPlayerPath = null;
 }
 
+function openRenameById(id) { const e = fileRegistry[id]; if (!e) return; openRename(e.path, e.name); }
+function confirmDeleteById(id) { const e = fileRegistry[id]; if (!e) return; confirmDelete(e.path); }
 
-
-function openRenameById(id) {
-  const e = fileRegistry[id];
-  if (!e) return;
-  openRename(e.path, e.name);
-}
-function confirmDeleteById(id) {
-  const e = fileRegistry[id];
-  if (!e) return;
-  confirmDelete(e.path);
-}
-
-// Drag-to-move between folders
 let dragSrcId = null;
 function setupFileDrag() {
   const list = document.getElementById('file-list');
   if (!list) return;
   list.querySelectorAll('.file-item').forEach(item => {
-    // Click handler
     item.addEventListener('click', handleClick);
-    // Drag source
-    item.addEventListener('dragstart', e => {
-      dragSrcId = item.dataset.id;
-      e.dataTransfer.effectAllowed = 'move';
-      item.style.opacity = '0.5';
-    });
-    item.addEventListener('dragend', e => {
-      item.style.opacity = '';
-      list.querySelectorAll('.file-item').forEach(i => i.classList.remove('drag-over-dir'));
-    });
-    // Drop target (only dirs)
+    item.addEventListener('dragstart', e => { dragSrcId = item.dataset.id; e.dataTransfer.effectAllowed = 'move'; item.style.opacity = '0.5'; });
+    item.addEventListener('dragend', e => { item.style.opacity = ''; list.querySelectorAll('.file-item').forEach(i => i.classList.remove('drag-over-dir')); });
     if (item.dataset.type === 'dir') {
-      item.addEventListener('dragover', e => {
-        if (dragSrcId && dragSrcId !== item.dataset.id) {
-          e.preventDefault();
-          item.classList.add('drag-over-dir');
-        }
-      });
+      item.addEventListener('dragover', e => { if (dragSrcId && dragSrcId !== item.dataset.id) { e.preventDefault(); item.classList.add('drag-over-dir'); } });
       item.addEventListener('dragleave', () => item.classList.remove('drag-over-dir'));
       item.addEventListener('drop', async e => {
-        e.preventDefault();
-        e.stopPropagation();
-        item.classList.remove('drag-over-dir');
+        e.preventDefault(); e.stopPropagation(); item.classList.remove('drag-over-dir');
         if (!dragSrcId || dragSrcId === item.dataset.id) return;
-        const src = fileRegistry[dragSrcId];
-        const dst = fileRegistry[item.dataset.id];
+        const src = fileRegistry[dragSrcId], dst = fileRegistry[item.dataset.id];
         if (!src || !dst) return;
         await api('/move', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({src: src.path, dst_dir: dst.path}) });
         renderFiles();
@@ -632,14 +700,9 @@ function setupFileDrag() {
 }
 
 // ── Upload ──────────────────────────────────────────────────────────────────
-function openUpload() {
-  document.getElementById('file-input').click();
-}
+function openUpload() { document.getElementById('file-input').click(); }
 
-document.getElementById('file-input').addEventListener('change', e => {
-  uploadFiles(Array.from(e.target.files));
-  e.target.value = '';
-});
+document.getElementById('file-input').addEventListener('change', e => { uploadFiles(Array.from(e.target.files)); e.target.value = ''; });
 
 function setupDropzone() {
   const dz = document.getElementById('dropzone');
@@ -647,18 +710,11 @@ function setupDropzone() {
   dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
   dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
   dz.addEventListener('drop', e => {
-    e.preventDefault();
-    dz.classList.remove('drag-over');
-
+    e.preventDefault(); dz.classList.remove('drag-over');
     const files = Array.from(e.dataTransfer.files);
     const hasRealFiles = files.length > 0 && files.some(f => f.size > 0);
-    if (hasRealFiles) {
-      uploadFiles(files.filter(f => f.size > 0));
-    } else if (files.length > 0) {
-      addUploadMessage('⚠️ Drag & Drop: Datei ohne Inhalt empfangen (0 Bytes). Nutze den ⬆️ Upload Button. Tipp: Bei Flatpak-Brave in Flatseal Allow user files aktivieren.');
-    } else {
-      addUploadMessage('⚠️ Keine Dateien empfangen. Nutze den ⬆️ Upload Button.');
-    }
+    if (hasRealFiles) { uploadFiles(files.filter(f => f.size > 0)); }
+    else if (files.length > 0) { addUploadMessage('⚠️ 0 Bytes empfangen. Nutze den ⬆️ Button. Tipp: Flatpak-Brave → Flatseal → Allow user files.'); }
   });
 }
 
@@ -672,170 +728,83 @@ function addUploadMessage(msg) {
   setTimeout(() => item.remove(), 8000);
 }
 
-
-let _uploadCount = 0;  // count of active uploads (prevents renderFiles from clobbering upload items)
-let uploadItemEls = [];  // references to upload item DOM elements
+let _uploadCount = 0;
+let uploadItemEls = [];
 
 async function uploadFiles(files) {
   _uploadCount++;
   const fileList = document.getElementById('file-list');
   if (!fileList) return;
-  // Remove empty state if present
   const emptyState = fileList.querySelector('#empty-state');
   if (emptyState) emptyState.remove();
-
-  // 1. Insert ALL upload items into the file list immediately
   const items = [];
   for (const file of files) {
     const itemId = 'up-' + Date.now() + '-' + Math.random().toString(36).slice(2);
     const ext = file.name.split('.').pop().toLowerCase();
     const icon = ['mp3','m4a','flac','wav','ogg','aac','opus','wma'].includes(ext) ? '🎵' : '📄';
     const item = document.createElement('div');
-    item.className = 'file-item uploading';
-    item.id = itemId;
-    item.innerHTML = `
-      <div class="file-icon">${icon}</div>
-      <div class="file-name">${file.name}</div>
-      <div class="upload-progress">
-        <div class="upload-bar-bg"><div class="upload-bar" id="${itemId}-bar" style="width:0%"></div></div>
-        <span class="upload-pct" id="${itemId}-pct">Warten...</span>
-      </div>`;
+    item.className = 'file-item uploading'; item.id = itemId;
+    item.innerHTML = `<div class="file-icon">${icon}</div><div class="file-name">${file.name}</div>
+      <div class="upload-progress"><div class="upload-bar-bg"><div class="upload-bar" id="${itemId}-bar" style="width:0%"></div></div>
+      <span class="upload-pct" id="${itemId}-pct">Warten...</span></div>`;
     fileList.appendChild(item);
     items.push({ file, itemId, el: item });
   }
-
-  // Track upload item elements so renderFiles() can preserve them
   uploadItemEls = items.map(it => it.el);
-
-  // 2. Upload sequentially, but don't call renderFiles() during uploads
   for (const { file, itemId } of items) {
     const pctEl = document.getElementById(itemId + '-pct');
     if (pctEl) pctEl.textContent = '0%';
-
     await new Promise(resolve => {
-      const fd = new FormData();
-      fd.append('dest_dir', currentPath);
-      fd.append('files', file);
-
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/upload');
+      const fd = new FormData(); fd.append('dest_dir', currentPath); fd.append('files', file);
+      const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload');
       xhr.upload.onprogress = e => {
-        if (e.lengthComputable) {
-          const pct = Math.round(e.loaded / e.total * 100);
-          const bar = document.getElementById(itemId + '-bar');
-          const pctEl = document.getElementById(itemId + '-pct');
-          if (bar) bar.style.width = pct + '%';
-          if (pctEl) pctEl.textContent = pct + '%';
-        }
+        if (e.lengthComputable) { const pct = Math.round(e.loaded / e.total * 100);
+          const bar = document.getElementById(itemId + '-bar'); const pctEl2 = document.getElementById(itemId + '-pct');
+          if (bar) bar.style.width = pct + '%'; if (pctEl2) pctEl2.textContent = pct + '%'; }
       };
       xhr.onload = () => {
-        const bar = document.getElementById(itemId + '-bar');
-        const pctEl = document.getElementById(itemId + '-pct');
-        const itemEl = document.getElementById(itemId);
+        const bar = document.getElementById(itemId + '-bar'); const pctEl3 = document.getElementById(itemId + '-pct'); const itemEl = document.getElementById(itemId);
         if (xhr.status === 200) {
           if (bar) { bar.style.width = '100%'; bar.className = 'upload-bar done'; }
-          if (pctEl) pctEl.textContent = '✅';
-          // After brief display, convert to a regular file item
-          setTimeout(() => {
-            if (!itemEl) return;
-            // Fade out progress
-            const progressDiv = itemEl.querySelector('.upload-progress');
-            if (progressDiv) {
-              progressDiv.style.transition = 'opacity 0.3s';
-              progressDiv.style.opacity = '0';
-            }
-            setTimeout(() => {
-              // Rebuild item to match regular file items exactly
-              itemEl.className = 'file-item';
-              itemEl.draggable = true;
-              // Build the file path for registry
+          if (pctEl3) pctEl3.textContent = '✅';
+          setTimeout(() => { if (!itemEl) return;
+            const p = itemEl.querySelector('.upload-progress'); if (p) { p.style.transition = 'opacity 0.3s'; p.style.opacity = '0'; }
+            setTimeout(() => { itemEl.className = 'file-item'; itemEl.draggable = true;
               const filePath = currentPath ? currentPath + '/' + file.name : file.name;
-              const regId = itemId;  // reuse as registry key
-              fileRegistry[regId] = { name: file.name, path: filePath, type: 'file', size: file.size };
-              itemEl.dataset.id = regId;
-              itemEl.dataset.type = 'file';
-              // Replace innerHTML to match regular file items
-              itemEl.innerHTML = '<div class="file-icon">🎵</div>'
-                + '<div class="file-name">' + file.name + '</div>'
-                + '<div class="file-size">' + formatSize(file.size) + '</div>'
-                + '<div class="file-actions" onclick="event.stopPropagation()">'
-                + '<button class="btn-icon" title="Rename" onclick="openRenameById(\'' + regId + '\')" >✏️</button>'
-                + '<button class="btn-icon danger" title="Delete" onclick="confirmDeleteById(\'' + regId + '\')" >🗑️</button>'
-                + '</div>';
-              // Re-attach click handler
+              const regId = itemId; fileRegistry[regId] = { name: file.name, path: filePath, type: 'file', size: file.size };
+              itemEl.dataset.id = regId; itemEl.dataset.type = 'file';
+              itemEl.innerHTML = '<div class="file-icon">🎵</div><div class="file-name">' + file.name + '</div><div class="file-size">' + formatSize(file.size) + '</div><div class="file-actions" onclick="event.stopPropagation()"><button class="btn-icon" title="Rename" onclick="openRenameById(\'' + regId + '\')">✏️</button><button class="btn-icon danger" title="Delete" onclick="confirmDeleteById(\'' + regId + '\')">🗑️</button></div>';
               itemEl.addEventListener('click', handleClick);
-              // Remove from upload tracking
               uploadItemEls = uploadItemEls.filter(el => el !== itemEl);
             }, 300);
           }, 1200);
-        } else {
-          if (bar) bar.className = 'upload-bar error';
-          if (pctEl) pctEl.textContent = '❌';
-          if (itemEl) itemEl.className = 'file-item upload-error';
-        }
+        } else { if (bar) bar.className = 'upload-bar error'; if (pctEl3) pctEl3.textContent = '❌'; if (itemEl) itemEl.className = 'file-item upload-error'; }
         resolve();
       };
-      xhr.timeout = 300000;  // 5 min per file (slow USB on Pi Zero)
-      xhr.ontimeout = () => {
-        const bar = document.getElementById(itemId + '-bar');
-        const pctEl = document.getElementById(itemId + '-pct');
-        if (bar) bar.className = 'upload-bar error';
-        if (pctEl) pctEl.textContent = '⏱️';
-        const el = document.getElementById(itemId);
-        if (el) el.className = 'file-item upload-error';
-        resolve();
-      };
-      xhr.onerror = () => {
-        const bar = document.getElementById(itemId + '-bar');
-        const pctEl = document.getElementById(itemId + '-pct');
-        if (bar) bar.className = 'upload-bar error';
-        if (pctEl) pctEl.textContent = '❌';
-        const el = document.getElementById(itemId);
-        if (el) el.className = 'file-item upload-error';
-        resolve();
-      };
+      xhr.timeout = 300000;
+      xhr.ontimeout = () => { const bar = document.getElementById(itemId + '-bar'); const pctEl4 = document.getElementById(itemId + '-pct');
+        if (bar) bar.className = 'upload-bar error'; if (pctEl4) pctEl4.textContent = '⏱️'; resolve(); };
+      xhr.onerror = () => { const bar = document.getElementById(itemId + '-bar'); const pctEl5 = document.getElementById(itemId + '-pct');
+        if (bar) bar.className = 'upload-bar error'; if (pctEl5) pctEl5.textContent = '❌'; resolve(); };
       xhr.send(fd);
     });
   }
-
-  // 3. All done — refresh the file list once to replace upload items with real entries
-  _uploadCount--;
-  uploadItemEls = [];
+  _uploadCount--; uploadItemEls = [];
   setTimeout(() => { renderFiles(); refreshStorage(); }, 600);
 }
 
 // ── Rename / Delete / Mkdir ─────────────────────────────────────────────────
-function openMkdir() {
-  openModal('Neuer Ordner', '', name => {
-    api('/mkdir', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: currentPath ? currentPath + '/' + name : name }) })
-      .then(() => renderFiles());
-  });
-}
-
-function openRename(path, oldName) {
-  openModal('Umbenennen', oldName, newName => {
-    api('/rename', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path, new_name: newName }) })
-      .then(() => renderFiles());
-  });
-}
-
+function openMkdir() { openModal('Neuer Ordner', '', name => { api('/mkdir', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: currentPath ? currentPath + '/' + name : name }) }).then(() => renderFiles()); }); }
+function openRename(path, oldName) { openModal('Umbenennen', oldName, newName => { api('/rename', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path, new_name: newName }) }).then(() => renderFiles()); }); }
 function confirmDelete(path) {
   const name = path.split('/').pop();
   document.getElementById('confirm-title').textContent = 'Löschen';
   document.getElementById('confirm-msg').textContent = `"${name}" wirklich löschen?`;
   document.getElementById('confirm-modal').classList.add('show');
-  document.getElementById('confirm-ok').onclick = async () => {
-    closeConfirm();
-    await api('/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path }) });
-    renderFiles();
-  };
+  document.getElementById('confirm-ok').onclick = async () => { closeConfirm(); await api('/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path }) }); renderFiles(); };
 }
-function closeConfirm() {
-  document.getElementById('confirm-modal').classList.remove('show');
-}
-document.getElementById('confirm-modal').addEventListener('click', e => {
-  if (e.target === document.getElementById('confirm-modal')) closeConfirm();
-});
+function closeConfirm() { document.getElementById('confirm-modal').classList.remove('show'); }
+document.getElementById('confirm-modal').addEventListener('click', e => { if (e.target === document.getElementById('confirm-modal')) closeConfirm(); });
 
 // ── Modal ───────────────────────────────────────────────────────────────────
 function openModal(title, value, callback) {
@@ -843,73 +812,63 @@ function openModal(title, value, callback) {
   document.getElementById('modal-input').value = value;
   document.getElementById('modal').classList.add('show');
   modalCallback = callback;
-  setTimeout(() => {
-    const input = document.getElementById('modal-input');
-    input.focus(); input.select();
-  }, 50);
+  setTimeout(() => { const input = document.getElementById('modal-input'); input.focus(); input.select(); }, 50);
 }
 function closeModal() { document.getElementById('modal').classList.remove('show'); modalCallback = null; }
-function submitModal() {
-  const val = document.getElementById('modal-input').value.trim();
-  if (val && modalCallback) { modalCallback(val); }
-  closeModal();
-}
+function submitModal() { const val = document.getElementById('modal-input').value.trim(); if (val && modalCallback) { modalCallback(val); } closeModal(); }
 document.getElementById('modal-input').addEventListener('keydown', e => { if(e.key === 'Enter') submitModal(); if(e.key === 'Escape') closeModal(); });
 document.getElementById('modal').addEventListener('click', e => { if(e.target === document.getElementById('modal')) closeModal(); });
 
-// ── Download ─────────────────────────────────────────────────────────────────
+// ── Download (yt-dlp) ────────────────────────────────────────────────────────
 async function startDownload() {
   const url = document.getElementById('dl-url').value.trim();
   if (!url) return;
-  const btn = document.getElementById('btn-dl');
-  btn.disabled = true;
-
+  const btn = document.getElementById('btn-dl'); btn.disabled = true;
   const res = await api('/dl/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url, dest_dir: currentPath}) });
   btn.disabled = false;
   if (res.error) { alert(res.error); return; }
   document.getElementById('dl-url').value = '';
 
   const jobId = res.job_id;
-  addJobCard(jobId, url);
+  createJobCard(jobId, '🎵', url);
+  addActiveJob(jobId, 'yt', url);
+  // Switch to active tab to show the download
+  switchTab('active');
 
-  // SSE stream
   const evtSrc = new EventSource(`/api/dl/stream/${jobId}`);
   evtSrc.onmessage = e => {
     try {
       const job = JSON.parse(e.data);
       updateJobCard(jobId, job);
-      // Update card title once yt-dlp reveals the real title
-      if (job.title) {
-        const titleEl = document.querySelector('#job-' + jobId + ' .dl-job-title');
-        if (titleEl) titleEl.textContent = '🎵 ' + job.title;
-      }
-      if (job.status === 'done' || job.status === 'error') {
-        evtSrc.close();
-        if (job.status === 'done') setTimeout(() => { renderFiles(); refreshStorage(); }, 500);
-      }
+      if (job.title) { const titleEl = document.querySelector('#job-' + jobId + ' .dl-job-title'); if (titleEl) titleEl.textContent = '🎵 ' + job.title; }
+      if (job.status === 'done' || job.status === 'error') { evtSrc.close(); markJobDone(jobId, job.status === 'error'); if (job.status === 'done') setTimeout(() => { renderFiles(); refreshStorage(); }, 500); }
     } catch(err) {}
   };
   evtSrc.onerror = () => evtSrc.close();
 }
 
-function addJobCard(jobId, title) {
-  const container = document.getElementById('dl-jobs');
+// ── Job Cards (created in active-downloads-list) ────────────────────────────
+function createJobCard(jobId, icon, title) {
+  const container = document.getElementById('active-downloads-list');
   const card = document.createElement('div');
   card.className = 'dl-job'; card.id = 'job-' + jobId;
-  card.innerHTML = `
-    <div class="dl-job-header">
-      <div class="dl-job-title">🎵 ${title}</div>
+  card.innerHTML = `<div class="dl-job-header">
+      <div class="dl-job-title">${icon} ${title}</div>
+      <div class="dl-job-tracknum" id="job-${jobId}-tracknum"></div>
       <div class="dl-job-status starting" id="job-${jobId}-status">Starting...</div>
     </div>
     <div class="progress-bar-bg"><div class="progress-bar" id="job-${jobId}-bar" style="width:0%"></div></div>
     <div class="dl-job-msg" id="job-${jobId}-msg">Initializing...</div>`;
   container.prepend(card);
+  // Hide empty state
+  document.getElementById('active-empty').style.display = 'none';
 }
 
 function updateJobCard(jobId, job) {
   const bar = document.getElementById(`job-${jobId}-bar`);
   const status = document.getElementById(`job-${jobId}-status`);
   const msg = document.getElementById(`job-${jobId}-msg`);
+  const tracknum = document.getElementById(`job-${jobId}-tracknum`);
   if (!bar) return;
   bar.style.width = job.progress + '%';
   if (job.status === 'done') bar.className = 'progress-bar done';
@@ -917,7 +876,86 @@ function updateJobCard(jobId, job) {
   status.className = 'dl-job-status ' + job.status;
   status.textContent = job.status === 'done' ? '✅ Done' : job.status === 'error' ? '❌ Error' : job.status;
   if (msg) msg.textContent = job.error || job.message || '';
+  if (tracknum) {
+    if (job.track_num) { tracknum.textContent = job.track_num; tracknum.style.display = 'inline'; }
+    else { tracknum.style.display = 'none'; }
+  }
 }
+
+// ── Tidal Auth ──────────────────────────────────────────────────────────────
+let tidalPollTimer = null;
+
+async function tidalCheckAuth() {
+  try {
+    const status = await api('/tidal/auth/status');
+    const loggedOut = document.getElementById('tidal-auth-logged-out');
+    const loggedIn = document.getElementById('tidal-auth-logged-in');
+    const pending = document.getElementById('tidal-auth-pending');
+    if (status.authenticated) { loggedOut.style.display = 'none'; loggedIn.style.display = 'inline'; pending.style.display = 'none'; }
+    else { loggedOut.style.display = 'inline'; loggedIn.style.display = 'none'; }
+  } catch(e) {}
+}
+
+async function tidalLogin() {
+  const btn = document.getElementById('btn-tidal-login'); btn.disabled = true; btn.textContent = '⏳ Verbinden...';
+  try {
+    const result = await api('/tidal/auth/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+    if (result.error) { alert('Fehler: ' + result.error); btn.disabled = false; btn.textContent = '🔑 Bei Tidal anmelden'; return; }
+    document.getElementById('tidal-auth-logged-out').style.display = 'none';
+    document.getElementById('tidal-auth-pending').style.display = 'block';
+    document.getElementById('tidal-auth-pending-msg').innerHTML = 'Öffne <a href="' + result.verification_uri + '" target="_blank" style="color:var(--accent2);">diesen Link</a> in einem neuen Tab und melde dich bei Tidal an. (Code: <strong>' + result.user_code + '</strong>)';
+    window.open(result.verification_uri, '_blank');
+    let expiresAt = Date.now() + (result.expires_in * 1000);
+    const interval = (result.interval || 5) * 1000;
+    tidalPollTimer = setInterval(async () => {
+      if (Date.now() > expiresAt) { tidalCancelLogin(); alert('Tidal-Login abgelaufen.'); return; }
+      try {
+        const poll = await api('/tidal/auth/poll', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({device_code: result.device_code}) });
+        if (poll.success) { clearInterval(tidalPollTimer); tidalPollTimer = null; document.getElementById('tidal-auth-pending').style.display = 'none'; tidalCheckAuth(); }
+      } catch(e) {}
+    }, interval);
+  } catch(e) { alert('Verbindungsfehler'); }
+  btn.disabled = false; btn.textContent = '🔑 Bei Tidal anmelden';
+}
+
+function tidalCancelLogin() {
+  if (tidalPollTimer) { clearInterval(tidalPollTimer); tidalPollTimer = null; }
+  document.getElementById('tidal-auth-pending').style.display = 'none';
+  document.getElementById('tidal-auth-logged-out').style.display = 'inline';
+}
+
+async function tidalLogout() { await api('/tidal/auth/logout', { method: 'POST' }); tidalCheckAuth(); }
+
+// ── Tidal Download ───────────────────────────────────────────────────────────
+async function startTidalDownload() {
+  const url = document.getElementById('tidal-url').value.trim();
+  if (!url) return;
+  const btn = document.getElementById('btn-tidal-dl'); btn.disabled = true;
+  const res = await api('/tidal/dl/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url, dest_dir: ''}) });
+  btn.disabled = false;
+  if (res.error) { alert(res.error); return; }
+  document.getElementById('tidal-url').value = '';
+
+  const jobId = res.job_id;
+  createJobCard(jobId, '🌊', url);
+  addActiveJob(jobId, 'tidal', url);
+  // Switch to active tab to show the download
+  switchTab('active');
+
+  const evtSrc = new EventSource(`/api/tidal/dl/stream/${jobId}`);
+  evtSrc.onmessage = e => {
+    try {
+      const job = JSON.parse(e.data);
+      updateJobCard(jobId, job);
+      if (job.title) { const titleEl = document.querySelector('#job-' + jobId + ' .dl-job-title'); if (titleEl) titleEl.textContent = '🌊 ' + job.title; }
+      if (job.status === 'done' || job.status === 'error') { evtSrc.close(); markJobDone(jobId, job.status === 'error'); if (job.status === 'done') setTimeout(() => { renderFiles(); refreshStorage(); }, 500); }
+    } catch(err) {}
+  };
+  evtSrc.onerror = () => evtSrc.close();
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+tidalCheckAuth();
 </script>
 </body>
 </html>

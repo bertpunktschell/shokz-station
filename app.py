@@ -9,6 +9,7 @@ from flask import Flask, request, jsonify, send_from_directory, Response, stream
 
 import file_manager as fm
 import downloader as dl
+import tidal
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -47,6 +48,10 @@ def _push_event(client_id, event_type, data):
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
+
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory("static", "favicon.svg", mimetype="image/svg+xml")
 
 # ── Status ────────────────────────────────────────────────────────────────────
 @app.route("/api/status")
@@ -260,6 +265,85 @@ def eject():
         return jsonify({"error": "Unmount failed"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ── Tidal Auth ────────────────────────────────────────────────────────────────
+@app.route("/api/tidal/auth/status")
+def tidal_auth_status():
+    return jsonify(tidal.get_auth_status())
+
+@app.route("/api/tidal/auth/login", methods=["POST"])
+def tidal_auth_login():
+    try:
+        result = tidal.start_device_auth()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tidal/auth/poll", methods=["POST"])
+def tidal_auth_poll():
+    data = request.json
+    device_code = data.get("device_code", "")
+    if not device_code:
+        return jsonify({"error": "No device_code provided"}), 400
+    success, result = tidal.poll_device_auth(device_code)
+    return jsonify({"success": success, **result})
+
+@app.route("/api/tidal/auth/logout", methods=["POST"])
+def tidal_auth_logout():
+    tidal.logout()
+    return jsonify({"ok": True})
+
+# ── Tidal Download ────────────────────────────────────────────────────────────
+@app.route("/api/tidal/dl/start", methods=["POST"])
+def tidal_dl_start():
+    data = request.json
+    url = data.get("url", "").strip()
+    dest_dir = data.get("dest_dir", "")
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    # Check auth first
+    auth = tidal.get_auth_status()
+    if not auth.get("authenticated"):
+        if auth.get("reason") == "token_expired_refreshable":
+            if not tidal.refresh_auth():
+                return jsonify({"error": "Tidal token expired. Please log in again."}), 401
+        else:
+            return jsonify({"error": "Not logged in to Tidal. Please authenticate first."}), 401
+    job_id = tidal.start_download(url, dest_dir)
+    return jsonify({"job_id": job_id})
+
+@app.route("/api/tidal/dl/status/<job_id>")
+def tidal_dl_status(job_id):
+    job = tidal.get_job(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify(job)
+
+@app.route("/api/tidal/dl/stream/<job_id>")
+def tidal_dl_stream(job_id):
+    """SSE stream for tidal download progress."""
+    def generate():
+        last = {}
+        for _ in range(1200):  # max 10 minutes polling
+            job = tidal.get_job(job_id)
+            if not job:
+                yield "data: {}\n\n"
+                break
+            if job != last:
+                last = dict(job)
+                yield f"data: {json.dumps(job)}\n\n"
+            if job.get("status") in ("done", "error"):
+                break
+            time.sleep(0.5)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)
